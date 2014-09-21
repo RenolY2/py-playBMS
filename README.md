@@ -7,4 +7,5 @@ It is in development and (as of now) cannot reliably read BMS files.
 Dependencies
 ==========
 
-The project realies on pygame for (future) music/midi playback.
+At the moment, the project realies on pygame for (future) music/midi playback. 
+This can be subject to change as music playback is being worked on.
