@@ -9,20 +9,34 @@ class DataReader():
     def byte(self):
         data = self.hdlr.read(1)
         return struct.unpack("B", data)[0]
+    
+    def ubyte(self):
+        data = self.hdlr.read(1)
+        return struct.unpack("B", data)[0]
         
     def int(self):
-        #Integer is 4 bytes, little endian
         data = self.hdlr.read(4)
         return struct.unpack(">I", data)[0]
     
+    def uint(self):
+        data = self.hdlr.read(4)
+        return struct.unpack(">i", data)[0]
+    
     def short(self):
-        #Short is 2 bytes, little endian
         data = self.hdlr.read(2)
         return struct.unpack(">H", data)[0]
+    
+    def ushort(self):
+        data = self.hdlr.read(2)
+        return struct.unpack(">h", data)[0]
     
     def float(self):
         data = self.hdlr.read(4)
         return struct.unpack(">F", data)[0]
+    
+    def ufloat(self):
+        data = self.hdlr.read(4)
+        return struct.unpack(">f", data)[0]
     
     def char(self):
         data = self.hdlr.read(1)
