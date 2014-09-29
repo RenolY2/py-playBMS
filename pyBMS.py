@@ -6,13 +6,34 @@ import logging
 
 
 import pygame
-
+#from midiutil.MidiFile import MIDIFile
 #from midi.MidiOutFile import MidiOutFile
 
 from BMSparser import BMS_Track, EndOfTrack
 from DataReader import DataReader
 
+
+
 log = logging.getLogger("BMS")
+
+
+
+"""class MyMidi(object):
+    def __init__(self, trackNum = 1):
+        self.MIDI = MIDIFile(trackNum)
+        
+    def addTrack(self, trackNum, name, startTime = 0, BPM = 120):
+        self.MIDI.addTrackName(trackNum, startTime, "Sample Track")
+        self.MIDI.addTempo(trackNum, startTime, BPM)
+        
+    def addNote(self, *args, **kwargs):
+        self.MIDI.addNote(*args, **kwargs)
+    
+    def programChange(self, track, channel, time, program):
+        self.MIDI.addProgramChange(track, channel, time, program)
+    
+    def writeToFile(self, fileobj):
+        self.MIDI.writeFile(fileobj)"""
 
 class Subroutine(object):
     def __init__(self, 
@@ -691,20 +712,14 @@ class BMS(object):
         #self.track_metadata.append((trackNum, trackOffset, trackLength))"""
     
 if __name__ == "__main__":
-    # How to use i
-    
-    
     pygame.midi.init()
     midiOutput = pygame.midi.Output(0)
-    
     #midiOutput = MidiOutFile("test.midi")
-    folder = "pikmin_bms"
-    #file = "ff_treasureget.bms"
-    #file = "2pbattle.bms"
-    file = "new_00.bms"
     
+    # Change this variable if you want to play a different file.
+    PATH = "pikmin_bms/ff_treasureget.bms"
     
-    with open(os.path.join(folder, file), "rb") as f:
+    with open(PATH, "rb") as f:
         # At the moment, there is no code to detect how fast the music
         # piece should be played, so you have to put in the values yourself
         # and see what sounds best.
