@@ -16,8 +16,28 @@ from DataReader import DataReader
 
 log = logging.getLogger("BMS")
 
-
-
+class notePlay(object):
+    def __init__(self, midiOutput):
+        self.midiOutput = midiOutput
+        
+        self.playNotes = []
+        self.turnOffNotes = []
+        
+    def addNote(self, note, volume, channel):
+        self.playNotes.append((note, volume, channel))
+    
+    def turnOffNote(self, note, volume, channel):
+        self.turnOffNotes.append((note, volume, channel))
+    
+    def executeActions(self):
+        for note in self.playNotes:
+            self.midiOutput.note_on(*note)
+        
+        for note in self.turnOffNotes:
+            self.midiOutput.note_off(*note)
+        
+        self.playNotes = []
+        self.turnOffNotes = []
 """class MyMidi(object):
     def __init__(self, trackNum = 1):
         self.MIDI = MIDIFile(trackNum)
@@ -51,7 +71,12 @@ class Subroutine(object):
         
         self.delay_countdown = 0
         
-        self.previousPosition = None
+        # It is unknown whether the previous position
+        # for the Goto/Return events works as a variable
+        # holding a single value, or a list holding several
+        # values from which the last one is used.
+        #self.previousPositions = []
+        self.previousPositions = 0
     
     
     """# A helper function that reads and handles the next 
@@ -82,7 +107,11 @@ class Subroutine(object):
     def checkIfPaused(self):
         if self.delay_countdown > 0:
             self.delay_countdown -= 1
-            return True
+            
+            if self.delay_countdown == 0:
+                return False
+            else:
+                return True
         else:
             return False
     
@@ -90,6 +119,8 @@ class Subroutine(object):
     # the current position in the file. We will
     # return to this position on encountering a 0xC6 event.
     def setPreviousOffset(self):
+        
+        #self.previousPositions.append(self.read.hdlr.tell())
         self.previousPosition = self.read.hdlr.tell()
     
     # The 0xC6 event makes us go to the previous position.
@@ -97,6 +128,9 @@ class Subroutine(object):
     # the 0xC4 event was parsed, so we do not have to worry
     # about hitting the event again.
     def goToPreviousOffset(self):
+        #offset = self.previousPositions.pop()
+        #self.goToOffset(offset)
+        
         self.goToOffset(self.previousPosition)
     
     # A helper method so that we don't have to type so much
@@ -525,6 +559,8 @@ class BMS(object):
         trackStopped = False
         tick = 0
         
+        note_player = notePlay(self.midiOutput)
+        
         while not trackStopped:
             subroutines_to_be_added = []
             
@@ -555,9 +591,11 @@ class BMS(object):
                 if command <= 0x7F:
                     note, polyphonicID, volume = args
                     
+                    
                     if enabledNotes[polyphonicID] == None:
                         enabledNotes[polyphonicID] = note
-                        self.midiOutput.note_on(note, volume, current_uniqueTrackID)
+                        #self.midiOutput.note_on(note, volume, current_uniqueTrackID)
+                        note_player.addNote(note, volume, current_trackID)
                 # Note-off event
                 elif command >= 0x81 and command <= 0x87:
                     polyphonicID = args[0]
@@ -565,7 +603,8 @@ class BMS(object):
                         note = enabledNotes[polyphonicID]
                         enabledNotes[polyphonicID] = None
                         #self.midiOutput.note_on(note, volume, polyphonicID)
-                        self.midiOutput.note_off(note, None, current_uniqueTrackID)                      
+                        #self.midiOutput.note_off(note, None, current_uniqueTrackID)   
+                        note_player.turnOffNote(note, None, current_trackID)                   
                 
                 # Delay events, the subroutine will be paused for a specific
                 # amount of ticks
@@ -596,7 +635,7 @@ class BMS(object):
                         instrumentBank = args[1]
                         print "Changing instrument bank to",instrumentBank
                         
-                        self.midiOutput.set_instrument(instrumentBank, current_uniqueTrackID)
+                        self.midiOutput.set_instrument(instrumentBank, current_trackID)
                         pass
                     elif modus == 33:
                         # Program change
@@ -642,7 +681,7 @@ class BMS(object):
             for trackID, offset in subroutines_to_be_added:
                 self.addSubroutine(trackID, offset)
             
-            
+            note_player.executeActions()
             time.sleep(self.waitTime)
             tick += 1        
                 
@@ -710,14 +749,17 @@ class BMS(object):
         
         self.BMS_tracks[trackNum]["length"] = trackLength
         #self.track_metadata.append((trackNum, trackOffset, trackLength))"""
-    
+
+
+
 if __name__ == "__main__":
     pygame.midi.init()
     midiOutput = pygame.midi.Output(0)
     #midiOutput = MidiOutFile("test.midi")
     
     # Change this variable if you want to play a different file.
-    PATH = "pikmin_bms/ff_treasureget.bms"
+    #PATH = "pikmin_bms/worldmap_intro.bms"
+    PATH = "pikmin_bms/kuro_post.bms"
     
     with open(PATH, "rb") as f:
         # At the moment, there is no code to detect how fast the music
