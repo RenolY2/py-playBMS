@@ -6,12 +6,15 @@ import logging
 
 
 import pygame
+
+
 #from midiutil.MidiFile import MIDIFile
 #from midi.MidiOutFile import MidiOutFile
 
 from BMSparser import BMS_Track, EndOfTrack
 from DataReader import DataReader
 
+from pygameMidi_extended import Output as MIDIOutput
 
 
 log = logging.getLogger("BMS")
@@ -625,7 +628,32 @@ class BMS(object):
                     
                     with open("VariableDelay.txt", "a") as f:
                         f.write(delay.encode("hex")+"\n")
+                
+                # Pan change. On a stereo speaker, it defines how much of the
+                # track should be played on the right speaker vs. on the left speaker.
+                # 0 plays the music fully on the left speaker, 127 plays the music 
+                # completely on the right speaker.
+                elif command == 0x9A:
+                    unknown1, pan, unknown2 = args
+                    self.midiOutput.set_pan(pan, current_trackID)
+                
+                # volume change
+                elif command == 0x9C:
+                    unknown1, volume = args
                     
+                    self.midiOutput.set_volume(volume, current_trackID)
+                
+                elif command == 0x9E:
+                    unknown1, pitch, unknown2 = args
+                    
+                    # The BMS pitch value is 16 bits, but the MIDI pitch value
+                    # is only 14 bits, so we need to scale down the 16 bits to
+                    # 14 bits. This results in some loss of quality.
+                    pitch_factor = pitch / (2.0**16-1)
+                    fixed_pitch = int((2**14-1) * pitch_factor)
+                    print "Fixed pitch from {0} to {1}".format(pitch, fixed_pitch)
+                    self.midiOutput.set_pitch(fixed_pitch, current_trackID)
+                
                 # Instrument Bank select or Program change
                 elif command == 0xA4:
                     modus = args[0]
@@ -635,12 +663,13 @@ class BMS(object):
                         instrumentBank = args[1]
                         print "Changing instrument bank to",instrumentBank
                         
-                        self.midiOutput.set_instrument(instrumentBank, current_trackID)
+                        
                         pass
                     elif modus == 33:
                         # Program change
                         program = args[1]
                         print "Changing program bank to",program
+                        self.midiOutput.set_instrument(instrumentBank, current_trackID)
                         pass
                 
                 # Store current position, go to a specific offset
@@ -754,12 +783,12 @@ class BMS(object):
 
 if __name__ == "__main__":
     pygame.midi.init()
-    midiOutput = pygame.midi.Output(0)
+    midiOutput = MIDIOutput(0)#pygame.midi.Output(0)
     #midiOutput = MidiOutFile("test.midi")
     
     # Change this variable if you want to play a different file.
     #PATH = "pikmin_bms/worldmap_intro.bms"
-    PATH = "pikmin_bms/kuro_post.bms"
+    PATH = "pikmin_bms/battle_t.bms"
     
     with open(PATH, "rb") as f:
         # At the moment, there is no code to detect how fast the music
@@ -771,7 +800,7 @@ if __name__ == "__main__":
         # As of now, the values have no other significance besides defining the wait time
         # between each "tick" (On a single "tick", one command 
         # from each subroutine is being read).
-        myBMS = BMS(f, midiOutput, BPM = 90, PPQN = 96)
+        myBMS = BMS(f, midiOutput, BPM = 90, PPQN = 100)
         
         myBMS.bmsEngine_run()
     
