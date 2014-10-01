@@ -52,7 +52,6 @@ class DataReader():
 
     
     def byteArray(self, len):
-        self.index += len
         data = self.hdlr.read(len)
         bytes = struct.unpack(str(len)+"B", data)
         return bytes
