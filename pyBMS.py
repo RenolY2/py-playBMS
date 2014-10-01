@@ -1,6 +1,7 @@
 import time
 import StringIO
 import os
+from struct import error as struct_error
 
 import logging
 
@@ -73,6 +74,8 @@ class Subroutine(object):
         self.read.hdlr.seek(offset)
         
         self.delay_countdown = 0
+        self.last_countdown = 0
+        self.wasPaused = False
         
         # It is unknown whether the previous position
         # for the Goto/Return events works as a variable
@@ -101,6 +104,8 @@ class Subroutine(object):
     
     def setPause(self, pauseLength):
         self.delay_countdown = pauseLength
+        self.last_countdown = pauseLength
+        self.wasPaused = True
     
     # To enforce delays in the subroutine, this
     # method will return False if no delay is set,
@@ -144,7 +149,7 @@ class Subroutine(object):
     # This function is very long because it
     # contains the code to parse (almost) all the events
     # that can be encountered in a Pikmin 2 BMS file.    
-    def parse_next_command(self):
+    def parse_next_command(self, strict = True):
         read = self.read
         bmsfile = self.bmsHandle
         
@@ -174,7 +179,7 @@ class Subroutine(object):
             # but in some special cases it is possible that they range from 0 up to 15,
             # mostly only directly after a 0xB1 controller event.
             # This could be due to malformed data, needs more investigation.
-            if polyphonicID > 0xF:
+            if strict and polyphonicID > 0xF:
                 position = bmsfile.tell()
                 raise RuntimeError("Invalid Polyhponic ID ({0}) at offset {1} ({2})".format(hex(polyphonicID),
                                                                                             position,
@@ -312,8 +317,19 @@ class Subroutine(object):
             
             elif controlEventID == 0xB1: # Unknown
                 #read.int()
-                unknown1 = read.byte()
-                args = (unknown1, )
+                unknown1 = read.byte() # Always 0xC1
+                assert unknown1 == 0xC1
+                
+                unknown2 = read.byte()
+                
+                if unknown2 == 0x80:
+                    unknown3 = read.int()
+                elif unknown2 == 0x40:
+                    unknown3 = read.short()
+                else:
+                    raise RuntimeError("Value is neither 0x40 nor 0x80, this requires investigation!")
+                
+                args = (unknown1, unknown2, unknown3)
             
             elif controlEventID == 0xB8: # Unknown
                 unknown1 = read.short()
@@ -356,9 +372,14 @@ class Subroutine(object):
             elif controlEventID == 0xC8: # Loop to offset
                 #read.byte()
                 #read.tripplet_int()
-                loop_offset = read.int()
                 
-                args = (loop_offset, )
+                # Can be 0, 1 or 5?
+                # 0 = absolute, 1 = relative position?
+                mode = read.byte() 
+                
+                loop_offset = read.tripplet_int()
+                
+                args = (mode, loop_offset)
             
             elif controlEventID == 0xCB: # Unknown
                 unknown1 = read.byte()
@@ -512,7 +533,7 @@ class BMS(object):
         
         self.midiOutput = midiOutput
         
-        self.BMSTrack = BMS_Track(fileobj, midiOutput)
+        #self.BMSTrack = BMS_Track(fileobj, midiOutput)
         
         self.BMS_tracks = []
         
@@ -568,143 +589,152 @@ class BMS(object):
             subroutines_to_be_added = []
             
             for subroutine in self.BMS_tracks:
-                
                 current_trackID = subroutine.trackID
                 current_uniqueTrackID = subroutine.uniqueTrackID
-                
-                #subLog = logging.getLogger("BMS.Sub"+str(current_uniqueTrackID))
-                
-                enabledNotes = self.enabledNotes[current_uniqueTrackID]
-                
-                if current_uniqueTrackID in self.stoppedTracks:
-                    # The track already ended, so we do not have to check
-                    # it anymore.
-                    continue
-                
-                # We will check if the subroutine is currently paused,
-                # to avoid parsing events too early.
-                if subroutine.checkIfPaused() == True:
-                    continue
-                else:
-                    command, args = subroutine.parse_next_command()
-                
-                #print hex(command)
-                
-                # Note-on event
-                if command <= 0x7F:
-                    note, polyphonicID, volume = args
+                try:
+                    #subLog = logging.getLogger("BMS.Sub"+str(current_uniqueTrackID))
                     
+                    enabledNotes = self.enabledNotes[current_uniqueTrackID]
                     
-                    if enabledNotes[polyphonicID] == None:
-                        enabledNotes[polyphonicID] = note
-                        #self.midiOutput.note_on(note, volume, current_uniqueTrackID)
-                        note_player.addNote(note, volume, current_trackID)
-                # Note-off event
-                elif command >= 0x81 and command <= 0x87:
-                    polyphonicID = args[0]
-                    if enabledNotes[polyphonicID] != None:
-                        note = enabledNotes[polyphonicID]
-                        enabledNotes[polyphonicID] = None
-                        #self.midiOutput.note_on(note, volume, polyphonicID)
-                        #self.midiOutput.note_off(note, None, current_uniqueTrackID)   
-                        note_player.turnOffNote(note, None, current_trackID)                   
-                
-                # Delay events, the subroutine will be paused for a specific
-                # amount of ticks
-                elif command in (0x80, 0x88):
-                    delay = args[0]
-                    print "Track {0} is paused for {1} ticks".format(current_uniqueTrackID,
-                                                                     delay)
-                    subroutine.setPause(delay)
-                
-                
+                    if current_uniqueTrackID in self.stoppedTracks:
+                        # The track already ended, so we do not have to check
+                        # it anymore.
+                        continue
                     
-                # We need to collect examples of variable delay
-                # so that we can parse them correctly.
-                elif command == 0xF0:
-                    delay = args[0]
-                    print "####"
-                    print delay.encode("hex")
+                    # We will check if the subroutine is currently paused,
+                    # to avoid parsing events too early.
+                    if subroutine.checkIfPaused() == True:
+                        continue
+                    else:
+                        curr = subroutine.read.hdlr.tell()
+                        command, args = subroutine.parse_next_command()
+                        
+                        print hex(command), hex(curr)
                     
-                    with open("VariableDelay.txt", "a") as f:
-                        f.write(delay.encode("hex")+"\n")
-                
-                # Pan change. On a stereo speaker, it defines how much of the
-                # track should be played on the right speaker vs. on the left speaker.
-                # 0 plays the music fully on the left speaker, 127 plays the music 
-                # completely on the right speaker.
-                elif command == 0x9A:
-                    unknown1, pan, unknown2 = args
-                    self.midiOutput.set_pan(pan, current_trackID)
-                
-                # volume change
-                elif command == 0x9C:
-                    unknown1, volume = args
+                    #print hex(command)
                     
-                    self.midiOutput.set_volume(volume, current_trackID)
-                
-                elif command == 0x9E:
-                    unknown1, pitch, unknown2 = args
-                    
-                    # The BMS pitch value is 16 bits, but the MIDI pitch value
-                    # is only 14 bits, so we need to scale down the 16 bits to
-                    # 14 bits. This results in some loss of quality.
-                    pitch_factor = pitch / (2.0**16-1)
-                    fixed_pitch = int((2**14-1) * pitch_factor)
-                    print "Fixed pitch from {0} to {1}".format(pitch, fixed_pitch)
-                    self.midiOutput.set_pitch(fixed_pitch, current_trackID)
-                
-                # Instrument Bank select or Program change
-                elif command == 0xA4:
-                    modus = args[0]
-                    
-                    if modus == 32:
-                        # Instrument bank
-                        instrumentBank = args[1]
-                        print "Changing instrument bank to",instrumentBank
+                    # Note-on event
+                    if command <= 0x7F:
+                        note, polyphonicID, volume = args
                         
                         
-                        pass
-                    elif modus == 33:
-                        # Program change
-                        program = args[1]
-                        print "Changing program bank to",program
-                        self.midiOutput.set_instrument(instrumentBank, current_trackID)
-                        pass
-                
-                # Store current position, go to a specific offset
-                elif command == 0xC4:
-                    goto_offset = args[0]
-                    print "Offset", goto_offset
+                        if enabledNotes[polyphonicID] == None:
+                            enabledNotes[polyphonicID] = note
+                            #self.midiOutput.note_on(note, volume, current_uniqueTrackID)
+                            note_player.addNote(note, volume, current_trackID)
+                    # Note-off event
+                    elif command >= 0x81 and command <= 0x87:
+                        polyphonicID = args[0]
+                        if enabledNotes[polyphonicID] != None:
+                            note = enabledNotes[polyphonicID]
+                            enabledNotes[polyphonicID] = None
+                            #self.midiOutput.note_on(note, volume, polyphonicID)
+                            #self.midiOutput.note_off(note, None, current_uniqueTrackID)   
+                            note_player.turnOffNote(note, None, current_trackID)                   
                     
-                    subroutine.setPreviousOffset()
-                    subroutine.goToOffset(goto_offset)
-                    # We set the file position of the subroutine
-                    # to this new offset.
-                    #subroutine.read.hdlr.seek(goto_offset)
-                
-                # On a 0xC6 event, we have to return to the position previously stored
-                # by a 0xC4 event. 
-                elif command == 0xC6:
-                    subroutine.goToPreviousOffset()
-                
-                # A simple event for jumping to a specific position in the file.
-                elif command == 0xC8:
-                    offset = args[0]
+                    # Delay events, the subroutine will be paused for a specific
+                    # amount of ticks
+                    elif command in (0x80, 0x88):
+                        delay = args[0]
+                        print "Track {0} is paused for {1} ticks".format(current_uniqueTrackID,
+                                                                         delay)
+                        subroutine.setPause(delay)
                     
-                    subroutine.goToOffset(offset)
                     
-                
-                elif command == 0xC1:
-                    trackID, offset = args
-                    print trackID, offset
+                        
+                    # We need to collect examples of variable delay
+                    # so that we can parse them correctly.
+                    elif command == 0xF0:
+                        delay = args[0]
+                        print "####"
+                        print delay.encode("hex")
+                        
+                        with open("VariableDelay.txt", "a") as f:
+                            f.write(delay.encode("hex")+"\n")
                     
-                    subroutines_to_be_added.append((trackID, offset))
-                
-                elif command == 0xFF:
-                    self.stoppedTracks[current_uniqueTrackID] = True
-                    print "Reached end of track", current_uniqueTrackID
-                    raise RuntimeError("End of Track")
+                    # Pan change. On a stereo speaker, it defines how much of the
+                    # track should be played on the right speaker vs. on the left speaker.
+                    # 0 plays the music fully on the left speaker, 127 plays the music 
+                    # completely on the right speaker.
+                    elif command == 0x9A:
+                        unknown1, pan, unknown2 = args
+                        self.midiOutput.set_pan(pan, current_trackID)
+                    
+                    # volume change
+                    elif command == 0x9C:
+                        unknown1, volume = args
+                        
+                        self.midiOutput.set_volume(volume, current_trackID)
+                    
+                    elif command == 0x9E:
+                        unknown1, pitch, unknown2 = args
+                        
+                        # The BMS pitch value is 16 bits, but the MIDI pitch value
+                        # is only 14 bits, so we need to scale down the 16 bits to
+                        # 14 bits. This results in some loss of quality.
+                        pitch_factor = pitch / (2.0**16-1)
+                        fixed_pitch = int((2**14-1) * pitch_factor)
+                        print "Fixed pitch from {0} to {1}".format(pitch, fixed_pitch)
+                        self.midiOutput.set_pitch(fixed_pitch, current_trackID)
+                    
+                    # Instrument Bank select or Program change
+                    elif command == 0xA4:
+                        modus = args[0]
+                        
+                        if modus == 32:
+                            # Instrument bank
+                            instrumentBank = args[1]
+                            print "Changing instrument bank to",instrumentBank
+                            
+                            
+                            pass
+                        elif modus == 33:
+                            # Program change
+                            program = args[1]
+                            print "Changing program bank to",program
+                            self.midiOutput.set_instrument(instrumentBank, current_trackID)
+                            pass
+                    
+                    # Store current position, go to a specific offset
+                    elif command == 0xC4:
+                        goto_offset = args[0]
+                        print "Offset", goto_offset
+                        
+                        subroutine.setPreviousOffset()
+                        subroutine.goToOffset(goto_offset)
+                        # We set the file position of the subroutine
+                        # to this new offset.
+                        #subroutine.read.hdlr.seek(goto_offset)
+                    
+                    # On a 0xC6 event, we have to return to the position previously stored
+                    # by a 0xC4 event. 
+                    elif command == 0xC6:
+                        subroutine.goToPreviousOffset()
+                    
+                    # A simple event for jumping to a specific position in the file.
+                    elif command == 0xC8:
+                        mode, offset = args
+                        
+                        
+                        
+                        subroutine.goToOffset(offset)
+                        
+                    
+                    elif command == 0xC1:
+                        trackID, offset = args
+                        print trackID, offset
+                        
+                        subroutines_to_be_added.append((trackID, offset))
+                    
+                    elif command == 0xFF:
+                        self.stoppedTracks[current_uniqueTrackID] = True
+                        print "Reached end of track", current_uniqueTrackID
+                        #raise RuntimeError("End of Track")
+                        return True
+                except struct_error:
+                    print "Error in subroutine {0} at offset {1}".format(subroutine.uniqueTrackID,
+                                                                         subroutine.read.hdlr.tell())
+                    raise
                     
             
             for trackID, offset in subroutines_to_be_added:
@@ -787,8 +817,7 @@ if __name__ == "__main__":
     #midiOutput = MidiOutFile("test.midi")
     
     # Change this variable if you want to play a different file.
-    #PATH = "pikmin_bms/worldmap_intro.bms"
-    PATH = "pikmin_bms/battle_t.bms"
+    PATH = "pikmin2_bms/ff_annihi.bms"
     
     with open(PATH, "rb") as f:
         # At the moment, there is no code to detect how fast the music
@@ -800,7 +829,10 @@ if __name__ == "__main__":
         # As of now, the values have no other significance besides defining the wait time
         # between each "tick" (On a single "tick", one command 
         # from each subroutine is being read).
-        myBMS = BMS(f, midiOutput, BPM = 90, PPQN = 100)
+        myBMS = BMS(f, midiOutput, BPM = 96, PPQN = 100)
         
         myBMS.bmsEngine_run()
+    
+    midiOutput.close()
+    pygame.midi.quit()
     
