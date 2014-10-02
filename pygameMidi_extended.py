@@ -26,3 +26,9 @@ class Output(Output):#pygame.midi.Output):
         pitch_msb = pitch & 127
         
         self.write_short(0xE0 + channel, pitch_lsb, pitch_msb)
+    
+    def set_instrument_bank(self, bank, channel):
+        assert (0 <= channel <= 15)
+        assert bank <= 127
+        
+        self.write_short(0xB0 + channel, 0x00, bank)
