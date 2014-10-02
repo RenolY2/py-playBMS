@@ -11,11 +11,14 @@ import pygame
 
 #from midiutil.MidiFile import MIDIFile
 #from midi.MidiOutFile import MidiOutFile
+from EventParsers import Pikmin2_parser, WindWaker_parser
 
 from BMSparser import BMS_Track, EndOfTrack
 from DataReader import DataReader
 
 from pygameMidi_extended import Output as MIDIOutput
+
+
 
 
 log = logging.getLogger("BMS")
@@ -62,7 +65,7 @@ class notePlay(object):
 class Subroutine(object):
     def __init__(self, 
                  bmsHandle, trackID, uniqueTrackID,
-                 offset):
+                 offset, eventParser):
         
         self.bmsHandle = bmsHandle
         
@@ -83,6 +86,9 @@ class Subroutine(object):
         # values from which the last one is used.
         #self.previousPositions = []
         self.previousPositions = 0
+        
+        
+        self.__parser__ = eventParser
     
     
     """# A helper function that reads and handles the next 
@@ -97,7 +103,9 @@ class Subroutine(object):
     
     def handle_command(self, commandID, args):
         pass"""
-    
+    def parse_next_command(self, strict = True):
+        return self.__parser__(self.read, self.bmsHandle)
+        
     def parse_iter(self):
         yield self.parse_next_command()
     
@@ -149,381 +157,15 @@ class Subroutine(object):
     # This function is very long because it
     # contains the code to parse (almost) all the events
     # that can be encountered in a Pikmin 2 BMS file.    
-    def parse_next_command(self, strict = True):
-        read = self.read
-        bmsfile = self.bmsHandle
-        
-        valuePos = int(bmsfile.tell())
-        value = read.byte()
-        
-        # We will store arguments for callback functions
-        # in the args variable. Some controller events might
-        # not have any arguments, so the variable will be
-        # None, but otherwise it will be redefined by
-        # the parsers for the controller events.
-        args = None
-        
-        currPos = int(bmsfile.tell())
-        
-        if value <= 0x7F: 
-            # Values below and equal to 127 are note-on events
-            # Depending on the value, they turn on specific notes.
-            
-            note_on_event = value
-            polyphonicID = read.byte()
-            volume = read.byte()
-            
-            args = (note_on_event, polyphonicID, volume)
-            
-            # Generally, polyphonic IDs should range from 1 to 7,
-            # but in some special cases it is possible that they range from 0 up to 15,
-            # mostly only directly after a 0xB1 controller event.
-            # This could be due to malformed data, needs more investigation.
-            if strict and polyphonicID > 0xF:
-                position = bmsfile.tell()
-                raise RuntimeError("Invalid Polyhponic ID ({0}) at offset {1} ({2})".format(hex(polyphonicID),
-                                                                                            position,
-                                                                                            hex(position))
-                                   )
-                
-            
-            #print "Reading note {0} with polyphonic ID {1} ({3}) and volume {2}".format(hex(note_on_event),
-            #                                                                      polyphonicID,
-            #                                                                      volume, polyphonicID & 0b111)
-            return note_on_event, args
-        
-        else:
-            # Values above 127 are controller events.
-            # They can change the flow of the music sequence,
-            # initiate additional tracks or turn off notes with
-            # a specific polyphonic ID.
-            controlEventID = value
-            
-            
-            if controlEventID == 0x80: # Delay, up to 0xFF (255) ticks
-                delayLength_inTicks = read.byte()
-                
-                args = (delayLength_inTicks, )
-            
-            elif controlEventID >= 0x81 and controlEventID <= 0x87: # note-off event
-                # Each ID refers to a specific polyphonic ID.
-                # 0x81 refers to 1, 0x82 refers to 2, etc.
-                #
-                # We can retrieve the correct ID by taking
-                # the three least significant bits of the byte.
-                polyphonicID = controlEventID & 0b111 
-                
-                args = (polyphonicID, )
-                
-                #print "Turning off note with polyphonic ID {0}".format(polyphonicID)
-                
-            elif controlEventID == 0x88: # Delay, up to 0xFFFF (65535) ticks
-                delayLength_inTicks = read.short()
-                
-                args = (delayLength_inTicks, )
-            
-            elif controlEventID == 0x98: # Unknown
-                # The data might either be two seperate
-                # bytes or a single short.
-                unknown1 = read.byte()
-                unknown2 = read.byte()
-                
-                args = (unknown1, unknown2)
-            
-            elif controlEventID == 0x9A: # Pan Change
-                unknown1 = read.byte()
-                pan = read.byte()
-                unknown2 = read.byte()
-                
-                args = (unknown1, pan, unknown2)
-            
-            elif controlEventID == 0x9C: # Volume Change
-                unknown1 = read.byte()
-                volume = read.byte()
-                
-                args = (unknown1, volume)
-            
-            elif controlEventID == 0x9E: # Pitch Shift
-                unknown1 = read.byte()
-                pitch = read.ushort()
-                unknown2 = read.byte()
-                
-                args = (unknown1, pitch, unknown2)
-                
-            elif controlEventID == 0xA0: # Unknown
-                unknown1 = read.short()
-                
-                args = (unknown1, )
-                
-            elif controlEventID == 0xA3: # Unknown
-                unknown1 = read.short()
-                
-                args = (unknown1, )
-                
-            elif controlEventID == 0xA4: # Bank Select/Program Select
-                unknown1 = read.byte()
-                
-                if unknown1 == 32:
-                    instrument_bank = read.byte()
-                    args = (unknown1, instrument_bank)
-                    
-                elif unknown1 == 33:
-                    program = read.byte()
-                    args = (unknown1, program)
-                    
-                else:
-                    unknown2 = read.byte()
-                    args = (unknown1, unknown2)
-                    
-            
-            elif controlEventID == 0xA5: # Unknown
-                unknown1 = read.short()
-                args = (unknown1, )
-            
-            elif controlEventID == 0xA6: # Unknown
-                pass
-            
-            elif controlEventID == 0xA7: # Unknown
-                unknown1 = read.short()
-                args = (unknown1, )
-            
-            elif controlEventID == 0xA9: # Unknown
-                unknown1 = read.int()
-                args = (unknown1, )
-            
-            elif controlEventID == 0xAA: # Unknown
-                unknown1 = read.int()
-                args = (unknown1, )
-                
-            elif controlEventID == 0xAC: # Unknown
-                # Could be a single 3 bytes integer,
-                # 3 separate bytes, or one byte and one
-                # short integer.
-                unknown1 = read.byte()
-                unknown2 = read.byte()
-                unknown3 = read.byte()
-                
-                args = (unknown1, unknown2, unknown3)
-            
-            # This controller event seems to be used
-            # only by se.bms, though I have not yet
-            # figured out whether it has two or three
-            # bytes of data.
-            #
-            #elif controlEventID == 0xAD: # Unknown
-            #    #read.byte()
-            #    #read.short()
-            #"""
-            
-            elif controlEventID == 0xB1: # Unknown
-                #read.int()
-                unknown1 = read.byte() # Always 0xC1
-                assert unknown1 == 0xC1
-                
-                unknown2 = read.byte()
-                
-                if unknown2 == 0x80:
-                    unknown3 = read.int()
-                elif unknown2 == 0x40:
-                    unknown3 = read.short()
-                else:
-                    raise RuntimeError("Value is neither 0x40 nor 0x80, this requires investigation!")
-                
-                args = (unknown1, unknown2, unknown3)
-            
-            elif controlEventID == 0xB8: # Unknown
-                unknown1 = read.short()
-                args = (unknown1, )
-                
-            elif controlEventID == 0xC1: # Track List Num + Offset
-                newTrackNum = read.byte()
-                newTrackOffset = read.tripplet_int()
-                
-                args = (newTrackNum, newTrackOffset)
-            
-            elif controlEventID == 0xC2: # Unknown
-                unknown1 = read.byte()
-                
-                args = (unknown1, )
-            
-            elif controlEventID == 0xC4: # Goto a specific offset
-                goto_offset = read.int()
-                
-                args = (goto_offset, )
-            
-            elif controlEventID == 0xC5: # Unknown
-                # In JAudio Player this was a 'Jump back
-                # to reference' marker
-                #read.tripplet_int()
-                pass
-            
-            elif controlEventID == 0xC6: # Return to previous position
-                unknown1 = read.byte()
-                
-                args = (unknown1, )
-            
-            elif controlEventID == 0xC7: # Unknown
-                # In JAudio Player this was 'loop to offset'
-                unknown1 = read.byte()
-                unknown2 = read.tripplet_int()
-                
-                args = (unknown1, unknown2)
-            
-            elif controlEventID == 0xC8: # Loop to offset
-                #read.byte()
-                #read.tripplet_int()
-                
-                # Can be 0, 1 or 5?
-                # 0 = absolute, 1 = relative position?
-                mode = read.byte() 
-                
-                loop_offset = read.tripplet_int()
-                
-                args = (mode, loop_offset)
-            
-            elif controlEventID == 0xCB: # Unknown
-                unknown1 = read.byte()
-                unknown2 = read.byte()
-                
-                args = (unknown1, unknown2)
-            
-            elif controlEventID == 0xCC: # Unknown
-                unknown1 = read.byte()
-                unknown2 = read.byte()
-                
-                args = (unknown1, unknown2)
-                
-            elif controlEventID == 0xCF: # Unknown
-                unknown1 = read.byte()
-                
-                args = (unknown1, )
-                
-            elif controlEventID == 0xD0: # Unknown
-                unknown1 = read.short()
-                
-                args = (unknown1, )
-            
-            elif controlEventID == 0xD1: # Unknown
-                unknown1 = read.short()
-                
-                args = (unknown1, )
-                
-            elif controlEventID == 0xD5: # Unknown
-                unknown1 = read.short()
-                
-                args = (unknown1, )
-            
-            elif controlEventID == 0xDA: # Unknown
-                unknown1 = read.byte()
-                
-                args = (unknown1, )
-            
-            elif controlEventID == 0xDB: # Unknown
-                unknown1 = read.byte()
-                
-                args = (unknown1, )
-                
-            elif controlEventID == 0xDF: # Unknown
-                unknown1 = read.byte()
-                unknown2 = read.tripplet_int()
-                
-                args = (unknown1, unknown2)
-                
-            elif controlEventID == 0xE0: # Unknown
-                # In JAudio Player this was Tempo with 
-                # two bytes of data.
-                # In Pikmin 2 it could be three bytes of data.
-                unknown1 = read.byte()
-                unknown2 = read.short()
-                
-                args = (unknown1, unknown2)
-            
-            elif controlEventID == 0xE1: # Unknown
-                pass
-            
-            elif controlEventID == 0xE3: # Unknown 
-                # In JAudio Player this was Instrument change with 
-                # one byte of data.
-                # In the Pikmin 2 bms file it seems to be something
-                # else, no data follows it.
-                pass
-            
-            elif controlEventID == 0xE6: # Unknown
-                unknown1 = read.short()
-                
-                args = (unknown1, )
-                
-            elif controlEventID == 0xE7: # Unknown
-                unknown1 = read.short()
-                
-                args = (unknown1, )
-            
-            elif controlEventID == 0xEF: # Unknown
-                unknown1 = read.byte()
-                unknown2 = read.byte()
-                unknown3 = read.byte()
-                
-                args = (unknown1, unknown2, unknown3)
-            
-            elif controlEventID == 0xF0: # Delay (variable-length quantity)
-                start = bmsfile.tell()
-                
-                value = read.byte()
-                
-                # The most significant bit in the value
-                # tells us that we need to read another byte.
-                # We keep doing it until the most significant 
-                # bit in the new value stops being 1 (i.e., 0).
-                while (value >> 7) == 1:
-                    value = read.byte()
-                
-                dataLen = bmsfile.tell() - start
-                bmsfile.seek(start)
-                
-                data = read.byteArray(dataLen)
-                
-                args = (data, )
-            
-            elif controlEventID == 0xF1: # Unknown
-                unknown1 = read.byte()
-                
-                args = (unknown1, )
-            
-            elif controlEventID == 0xF9: # Unknown
-                unknown1 = read.short()    
-                
-                args = (unknown1, )
-                
-            elif controlEventID == 0xFD: # Unknown
-                # In JAudio Player, this was a Marker event
-                # with variable length.
-                # In Pikmin 2 it is just two bytes of data.
-                
-                unknown1 = read.short()
-                
-                args = (unknown1, )
-            
-            elif controlEventID == 0xFE: # Unknown
-                unknown1 = read.short()
-                
-                args = (unknown1, )
-                
-            elif controlEventID == 0xFF: # End of Track
-                pass
-            
-            else:
-                position = bmsfile.tell()
-                raise RuntimeError("Unknown controlEventID {0} "
-                                   "at offset {1} ({2})".format(hex(controlEventID),
-                                                                valuePos, hex(valuePos)))
-        return controlEventID, args
+    
     
     
     
 class BMS(object):
     # BPM is beats per minute, PPQN is pulses per quarter note,
     # as according to MIDI specs.
-    def __init__(self, fileobj, midiOutput, BPM = 120, PPQN = 96):
+    def __init__(self, fileobj, midiOutput, BPM = 120, PPQN = 96,
+                 parser = Pikmin2_parser):
         self.bmsFile = fileobj
         
         # We will read the entire file into memory
@@ -547,14 +189,20 @@ class BMS(object):
         self.tempo = BPM
         self.waitTime = (MPQN/1000000)/PPQN
         
+        self.__eventParser__ = parser.parse_next_command#getattr(EventParsers, "Pikmin2"+"_parser").parse_next_command
+        
         # The main subroutine does not have a specified
         # track ID in the BMS file, so we initiate the
         # subroutine with None as it's track ID.
         self.addSubroutine(trackID = None, offset = 0)
         
         self.stoppedTracks = {}
-        #self.collectTrackInfo()
         
+        #self.collectTrackInfo()
+    
+    #def setParser(self, parser):
+    #    self.__eventParser__ = parser.parse_next_command
+    
     def addSubroutine(self, trackID, offset):
         print "Added track",trackID
         # Create a buffer instance so that we can avoid
@@ -563,7 +211,7 @@ class BMS(object):
         
         uniqueTrackID = len(self.BMS_tracks)
         subroutine = Subroutine(bmsHandle, trackID, uniqueTrackID,
-                                offset)
+                                offset, eventParser = self.__eventParser__)
         
         self.BMS_tracks.append(subroutine)
         
@@ -686,13 +334,13 @@ class BMS(object):
                             instrumentBank = args[1]
                             print "Changing instrument bank to",instrumentBank
                             
-                            
+                            self.midiOutput.set_instrument_bank(instrumentBank, current_trackID)
                             pass
                         elif modus == 33:
                             # Program change
                             program = args[1]
                             print "Changing program bank to",program
-                            self.midiOutput.set_instrument(instrumentBank, current_trackID)
+                            self.midiOutput.set_instrument(program%128, current_trackID)
                             pass
                     
                     # Store current position, go to a specific offset
@@ -728,7 +376,7 @@ class BMS(object):
                     
                     elif command == 0xFF:
                         self.stoppedTracks[current_uniqueTrackID] = True
-                        print "Reached end of track", current_uniqueTrackID
+                        print "Reached end of track", current_uniqueTrackID, "TrackID: ",current_trackID
                         #raise RuntimeError("End of Track")
                         return True
                 except struct_error:
@@ -817,7 +465,11 @@ if __name__ == "__main__":
     #midiOutput = MidiOutFile("test.midi")
     
     # Change this variable if you want to play a different file.
-    PATH = "pikmin2_bms/ff_annihi.bms"
+    PATH = "pikmin2_bms/book.bms"
+    #PATH = "zelda_bms/pirate_5.bms"
+    
+    #PARSER = Pikmin2_parser
+    PARSER = WindWaker_parser
     
     with open(PATH, "rb") as f:
         # At the moment, there is no code to detect how fast the music
@@ -829,8 +481,8 @@ if __name__ == "__main__":
         # As of now, the values have no other significance besides defining the wait time
         # between each "tick" (On a single "tick", one command 
         # from each subroutine is being read).
-        myBMS = BMS(f, midiOutput, BPM = 96, PPQN = 100)
-        
+        myBMS = BMS(f, midiOutput, BPM = 96, PPQN = 100, parser = PARSER)
+        #myBMS.setParser(PARSER)
         myBMS.bmsEngine_run()
     
     midiOutput.close()
