@@ -7,7 +7,7 @@ from pyBMS import BMS
 from MidiWriter.midi import MIDI#midi
 
 from EventParsers import Pikmin2_parser, WindWaker_parser
-
+from helperFunctions import scaleDown_number
 
 
 # BMS files, when played back, have lots of tracks playing at once.
@@ -43,6 +43,9 @@ class MIDI_sheduler(object):
     
     def change_BPM(self, trackID, tick, bpm):
         self.addAction(trackID, tick, ("bpm", bpm))
+        
+    def change_PPQN(self, trackID, tick, ppqn):
+        self.addAction(trackID, tick, ("ppqn", ppqn))
     
     def track_iter(self):
         for trackID in self.tracks:
@@ -170,9 +173,12 @@ class BMS2MIDI(BMS):
                         #self.midiOutput.continuous_controller(channel = current_trackID,
                         #                                      controller = 0x07,
                         #                                      value = volume)
+                        
+                        fixed_volume = scaleDown_number(pitch, 16, 14)
+                        
                         midi_sheduler.controller_event(current_trackID,
-                                                 tick, 
-                                                 0x07, volume)
+                                                       tick, 
+                                                       0x39, fixed_volume, twoBytes = True)
                     
                     elif command == 0x9E:
                         unknown1, pitch, unknown2 = args
@@ -212,7 +218,7 @@ class BMS2MIDI(BMS):
                             #                             patch = instrumentBank)
                             midi_sheduler.program_change(current_trackID,
                                                          tick, 
-                                                         program%128)
+                                                         program & 127)
                     
                     # Store current position, go to a specific offset
                     elif command == 0xC4:
@@ -250,6 +256,11 @@ class BMS2MIDI(BMS):
                         
                         midi_sheduler.change_BPM(trackID, tick, bpmValue)
                     
+                    elif command == 0xFE:
+                        ppqnValue = args[0]
+                        
+                        midi_sheduler.change_PPQN(trackID, tick, ppqnValue)
+                    
                     elif command == 0xFF:
                         self.stoppedTracks[current_uniqueTrackID] = True
                         print "Reached end of track", current_uniqueTrackID
@@ -280,10 +291,13 @@ if __name__ == "__main__":
     
 
     BaseBPM = 100
+    lastBPM = BaseBPM
+    
     BPM = BaseBPM
     __tick_modifier__ = BPM / 100
     #PPQN = 100.0
     tempo = int(60000000.0 / BPM)
+    baseTempo = tempo
     
     # Microseconds per minute
     #MSPM = 60000000.0
@@ -295,13 +309,15 @@ if __name__ == "__main__":
     #waitTime = int(MPQN/PPQN)
     #waitTime = int(MPQN)*10000
     
-    #PARSER = Pikmin2_parser
-    PARSER = WindWaker_parser
+    PARSER = Pikmin2_parser
+    #PARSER = WindWaker_parser
     
     bpm_values = []
+    ppqn_values = []
+    instruments = []
     
     # Change this variable if you want to play a different file.
-    PATH = "pikmin2_bms/book.bms"
+    PATH = "pikmin2_bms/worldmap.bms"
     # Change this path if you want to save the results to a different file
     MIDI_PATH = "test2.midi"
     
@@ -352,10 +368,10 @@ if __name__ == "__main__":
         
         # Change the instrument bank for each track in case the default
         # instrument bank sounds odd.
-        myMidi.program_event(0, channel = 0, 
+        
+        myMidi.program_event(0, channel = trackID, 
                              program = 0x00, value = INSTRUMENT_BANK)
-        #myMidi.addControllerEvent(trackID, channel = 0, time = start,
-        #                          eventType = 0x00, paramerter1 = INSTRUMENT_BANK)
+        #myMidi.set_tempo(0, baseTempo)
         
         #midiFileOutput.update_time(0)
         #midiFileOutput.continuous_controller(channel = trackID,
@@ -375,44 +391,54 @@ if __name__ == "__main__":
             ticks_passed = timestamp - lastTime
             lastTime = timestamp
             
-            ticks_passed = int(ticks_passed * __tick_modifier__)
-            
             #midiFileOutput.update_time(ticks_passed)
             
             command, args = data[0], data[1:]
             
             if command == "note_on":
                 note, volume = args
-                #notes_enabled[note] = (timestamp, volume)
-                #midiFileOutput.note_on(channel=trackID, note = note, velocity = volume)
-                myMidi.note_on(ticks_passed, channel = 0, note = note, velocity = volume)
+                myMidi.note_on(ticks_passed, channel = trackID, note = note, velocity = volume)
+                
             elif command == "note_off":
                 note, volume = args
-                #prev_timestamp, startVolume = notes_enabled[note] 
-                myMidi.note_off(ticks_passed, channel = 0, note = note, velocity = volume)
-                #midiFileOutput.note_off(channel=trackID, note = note, velocity = volume)
+                myMidi.note_off(ticks_passed, channel = trackID, note = note, velocity = volume)
+
             elif command == "controller":
                 controller, value = args
-                myMidi.program_event(ticks_passed, channel = 0, 
+                myMidi.program_event(ticks_passed, channel = trackID, 
                                      program = controller, value = value)
-                #midiFileOutput.continuous_controller(channel = trackID,
-                #                                     controller = controller,
-                #                                     value = value)
+
             elif command == "program":
-                program = args[0]
+                program_instrument = args[0]
+                instruments.append(program_instrument)
                 #midiFileOutput.patch_change(channel = trackID,
                 #                            patch = program)
-                myMidi.set_instrument(ticks_passed, channel = 0, instrument = program)
+                #myMidi.set_instrument(ticks_passed, channel = 0, instrument = program_instrument)
+                myMidi.set_instrument(ticks_passed, channel = trackID, instrument = program_instrument)
                 
             elif command == "pitch":
                 pitch = args[0]
                 #midiFileOutput.pitch_bend(channel = trackID,
                 #                          value = pitch)
-                myMidi.set_pitch(ticks_passed, channel = 0, pitch = pitch)
+                
+                myMidi.set_pitch(ticks_passed, channel = trackID, pitch = pitch)
             
             elif command == "bpm":
                 bpm = args[0]
                 bpm_values.append(bpm)
+                
+                tempo = int(60000000/bpm)
+                
+                lastBPM = bpm
+                
+                myMidi.set_tempo(ticks_passed, tempo)
+            
+            elif command == "ppqn":
+                ppqn = args[0]
+                tempo = 60000000 / (lastBPM * ppqn) 
+                ppqn_values.append(ppqn)
+                myMidi.set_tempo(ticks_passed, tempo)
+                
                 #__tick_modifier__ = BPM/float(bpm)
                 
             
@@ -427,5 +453,7 @@ if __name__ == "__main__":
     #pygame.midi.quit()
     print "done!"
     print "Tempo: ", tempo
-    print bpm_values
-    time.sleep(3)
+    print "BPM values:",bpm_values
+    print "PPQN values:",ppqn_values
+    print "Instruments:",instruments
+    time.sleep(2)
