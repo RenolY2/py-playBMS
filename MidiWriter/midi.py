@@ -21,25 +21,23 @@ class MIDI(object):
                                          self.trackAmount, self.tempo))
     
         self.__current_track_length = 0
-        self.__track_data = []
+        self.__track_data = None
     
     def writeAction(self, timePassed, data):
         variableLength = VarLen_encode(timePassed)
-        VLE_length = len(variableLength)
         
-        self.__current_track_length += VLE_length + len(data)
+        packedVariableLength = struct.pack("B"*len(variableLength), *variableLength)
         
-        packedVariableLength = struct.pack("B"*VLE_length, *variableLength)
-        
-        self.__track_data.append((packedVariableLength, data))
+        self.__track_data.write(packedVariableLength)
+        self.__track_data.write(data)#append((packedVariableLength, data))
     
     def startTrack(self):
-        if len(self.__track_data) != 0:
+        if self.__track_data != None:
             raise RuntimeError("You need to end the previous track before starting a new one!")
         
         header = "MTrk"
         self.__current_track_length = 0
-        self.__track_data = []
+        self.__track_data = StringIO()
     
     def note_on(self, timePassed, channel, note, velocity):
         assert channel <= 15
@@ -57,8 +55,9 @@ class MIDI(object):
     
     def set_instrument(self, timePassed, channel, instrument):
         assert channel <= 15
+        assert instrument >= 0 and instrument <= 127
         
-        note_data = struct.pack("Bb", 0xC0+channel, instrument)
+        note_data = struct.pack("BB", 0xC0+channel, instrument)
         
         self.writeAction(timePassed, note_data)
     
@@ -75,26 +74,64 @@ class MIDI(object):
         
         self.writeAction(timePassed, pitch_data)
     
-    def program_event(self, timePassed, channel, program, value):
+    def set_meta_event(self, timePassed, meta_event_type, data):
+        dataLen = VarLen_encode(len(data))
+        
+        meta_event_data = struct.pack("BB" + "B"*len(dataLen), 0xFF, meta_event_type, *dataLen)
+        meta_event_data += data
+        
+        self.writeAction(timePassed, meta_event_data)
+    
+    def set_tempo(self, timePassed, tempo):
+        assert tempo <= 2**24-1
+        
+        tempo_byte1 = (tempo >> 16) & 0xFF
+        tempo_byte2 = (tempo >> 8) & 0xFF
+        tempo_byte3 = tempo & 0xFF
+        
+        data = struct.pack("BBB", tempo_byte1, tempo_byte2, tempo_byte3)
+        
+        self.set_meta_event(timePassed, 0x51, data)
+        
+        
+        
+    def program_event(self, timePassed, channel, program, value, twoBytes = False):
         assert channel <= 15
-        program_data = struct.pack("Bbb", 0xB0+channel, program, value)
+        
+        if not twoBytes: 
+            assert value <= 127
+            
+            program_data = struct.pack("Bbb", 0xB0+channel, program, value)
+        else:
+            assert value <= 2**14-1
+            
+            value_lsb = (value >> 7) & 127
+            value_msb = value & 127
+            
+            program_data = struct.pack("Bbbb", 0xB0+channel, program,
+                                       value_lsb, value_msb)
+        
+        self.writeAction(timePassed, program_data)
+        
+        
     
     def end_track(self, timePassed = 0):
         end_of_track = struct.pack("BBB", 0xFF, 0x2F, 0x00)
         self.writeAction(timePassed, end_of_track)
         
-        self.midi_file.write("MTrk")
-        self.midi_file.write(struct.pack(">I", self.__current_track_length))
+        _trackData = self.__track_data.getvalue()
         
-        for action in self.__track_data:
-            time, data = action
-            self.midi_file.write(time)
-            self.midi_file.write(data)
+        self.midi_file.write("MTrk")
+        self.midi_file.write(struct.pack(">I", len(_trackData)))
+        self.midi_file.write(_trackData)
+        #for action in self.__track_data:
+        #    time, data = action
+        #    self.midi_file.write(time)
+        #    self.midi_file.write(data)
         
        
         
-        self.__track_data = []
-        self.__current_track_length = 0
+        self.__track_data = None
     
         
         
