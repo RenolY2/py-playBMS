@@ -18,7 +18,7 @@ from DataReader import DataReader
 
 from pygameMidi_extended import Output as MIDIOutput
 
-
+from helperFunctions import scaleDown_number
 
 
 log = logging.getLogger("BMS")
@@ -89,6 +89,9 @@ class Subroutine(object):
         
         
         self.__parser__ = eventParser
+        
+        self.BPM = 100
+        self.PPQN = 100
     
     
     """# A helper function that reads and handles the next 
@@ -312,7 +315,13 @@ class BMS(object):
                     elif command == 0x9C:
                         unknown1, volume = args
                         
-                        self.midiOutput.set_volume(volume, current_trackID)
+                        # Pygame does not support writing midi events with more than two bytes
+                        # of data. One byte is occupied by the event ID for the volume change,
+                        # leaving us only one byte to play with. Therefore we need to scale the 
+                        # volume value from 16 bits down to 7 bits.
+                        fixed_volume = scaleDown_number(volume, 16, 7)
+                        
+                        self.midiOutput.set_volume(fixed_volume, current_trackID)
                     
                     elif command == 0x9E:
                         unknown1, pitch, unknown2 = args
@@ -320,10 +329,11 @@ class BMS(object):
                         # The BMS pitch value is 16 bits, but the MIDI pitch value
                         # is only 14 bits, so we need to scale down the 16 bits to
                         # 14 bits. This results in some loss of quality.
-                        pitch_factor = pitch / (2.0**16-1)
-                        fixed_pitch = int((2**14-1) * pitch_factor)
-                        print "Fixed pitch from {0} to {1}".format(pitch, fixed_pitch)
-                        self.midiOutput.set_pitch(fixed_pitch, current_trackID)
+                        fixed_pitch = scaleDown_number(pitch, 16, 14)
+                        #pitch_factor = pitch / (2.0**16-1)
+                        #fixed_pitch = int((2**14-1) * pitch_factor)
+                        #print "Fixed pitch from {0} to {1}".format(pitch, fixed_pitch)
+                        #self.midiOutput.set_pitch(fixed_pitch, current_trackID)
                     
                     # Instrument Bank select or Program change
                     elif command == 0xA4:
@@ -334,13 +344,14 @@ class BMS(object):
                             instrumentBank = args[1]
                             print "Changing instrument bank to",instrumentBank
                             
-                            self.midiOutput.set_instrument_bank(instrumentBank, current_trackID)
+                            #self.midiOutput.set_instrument_bank(instrumentBank, current_trackID)
                             pass
                         elif modus == 33:
                             # Program change
                             program = args[1]
-                            print "Changing program bank to",program
-                            self.midiOutput.set_instrument(program%128, current_trackID)
+                            print "Changing program bank to",program&127
+                            #self.midiOutput.set_instrument(program & 127, current_trackID)
+                            self.midiOutput.set_instrument(program & 127, current_trackID)
                             pass
                     
                     # Store current position, go to a specific offset
@@ -465,11 +476,11 @@ if __name__ == "__main__":
     #midiOutput = MidiOutFile("test.midi")
     
     # Change this variable if you want to play a different file.
-    PATH = "pikmin2_bms/book.bms"
+    PATH = "pikmin2_bms/ff_keyget.bms"
     #PATH = "zelda_bms/pirate_5.bms"
     
-    #PARSER = Pikmin2_parser
-    PARSER = WindWaker_parser
+    PARSER = Pikmin2_parser
+    #PARSER = WindWaker_parser
     
     with open(PATH, "rb") as f:
         # At the moment, there is no code to detect how fast the music
