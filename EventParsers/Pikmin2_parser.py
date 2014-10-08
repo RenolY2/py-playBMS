@@ -1,4 +1,5 @@
-
+name = "Pikmin2"
+estimatedVersion = 2
 
 def parse_next_command(read, bmsfile, strict = True):
         valuePos = int(bmsfile.tell())

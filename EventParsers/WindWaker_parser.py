@@ -1,3 +1,6 @@
+name = "WindWaker"
+estimatedVersion = 1.5
+
 def parse_next_command(read, bmsfile, strict = True):
         valuePos = int(bmsfile.tell())
         value = read.byte()
