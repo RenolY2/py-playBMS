@@ -1,24 +1,16 @@
 import time
 import StringIO
-import os
-from struct import error as struct_error
-
 import logging
 
+from struct import error as struct_error
 
 import pygame
 
-
-#from midiutil.MidiFile import MIDIFile
-#from midi.MidiOutFile import MidiOutFile
+from DataReader import DataReader
 from EventParsers import (Pikmin2_parser, WindWaker_parser, 
                           SMarioSunshine_parser, Pikmin1_parser)
 
-from BMSparser import BMS_Track, EndOfTrack
-from DataReader import DataReader
-
 from pygameMidi_extended import Output as MIDIOutput
-
 from helperFunctions import scaleDown_number
 
 

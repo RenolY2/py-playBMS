@@ -1,9 +1,7 @@
-import pygame
 import time
 from struct import error as struct_error
 
-#from midi.MidiOutFile import MidiOutFile
-from pyBMS import BMS
+from pyBMS_play import BMS
 from MidiWriter.midi import MIDI#midi
 
 from EventParsers import (Pikmin2_parser, WindWaker_parser, 
