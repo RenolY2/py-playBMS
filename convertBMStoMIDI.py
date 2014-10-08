@@ -6,7 +6,9 @@ from struct import error as struct_error
 from pyBMS import BMS
 from MidiWriter.midi import MIDI#midi
 
-from EventParsers import Pikmin2_parser, WindWaker_parser
+from EventParsers import (Pikmin2_parser, WindWaker_parser, 
+                          SMarioSunshine_parser, Pikmin1_parser)
+
 from helperFunctions import scaleDown_number
 
 
@@ -32,8 +34,8 @@ class MIDI_sheduler(object):
     def note_off(self, trackID, tick, note, volume):
         self.addAction(trackID, tick, ("note_off", note, volume))
     
-    def controller_event(self, trackID, tick, controller, value):
-        self.addAction(trackID, tick, ("controller", controller, value))
+    def controller_event(self, trackID, tick, controller, value, useTwoBytes = False):
+        self.addAction(trackID, tick, ("controller", controller, value, useTwoBytes))
     
     def program_change(self, trackID, tick, program):
         self.addAction(trackID, tick, ("program", program))
@@ -97,7 +99,7 @@ class BMS2MIDI(BMS):
                         continue
                     else:
                         curr = subroutine.read.hdlr.tell()
-                        command, args = subroutine.parse_next_command()
+                        command, args = subroutine.parse_next_command(strict = self.strict)
                         
                         print hex(command), hex(curr)
                     
@@ -107,29 +109,41 @@ class BMS2MIDI(BMS):
                     if command <= 0x7F:
                         note, polyphonicID, volume = args
                         
-                        
+                        if polyphonicID > 0x7 and self.strict:
+                            raise RuntimeError("Invalid Polyphonic ID 0x{x:0} at offset 0x{x:1}"
+                                               "".format(polyphonicID, curr))
+                        elif polyphonicID > 0x7:
+                            # Well, we will skip this invalid note and hope that
+                            # everything will go well.
+                            continue
+                            
                         if enabledNotes[polyphonicID] == None:
-                            enabledNotes[polyphonicID] = note
+                            enabledNotes[polyphonicID] = [note]
+                        else:
+                            enabledNotes[polyphonicID].append(note)
                             #self.midiOutput.note_on(note, volume, current_uniqueTrackID)
                             #note_player.addNote(note, volume, current_trackID)
                             #self.midiOutput.note_on(channel=current_trackID, note = note, velocity = volume)
-                            midi_sheduler.note_on(current_trackID,
-                                                  tick, 
-                                                  note, volume)
+                        midi_sheduler.note_on(current_trackID,
+                                              tick, 
+                                              note, volume)
                             
                     # Note-off event
                     elif command >= 0x81 and command <= 0x87:
                         polyphonicID = args[0]
                         if enabledNotes[polyphonicID] != None:
-                            note = enabledNotes[polyphonicID]
-                            enabledNotes[polyphonicID] = None
+                            noteList = enabledNotes[polyphonicID]
+                           
                             #self.midiOutput.note_on(note, volume, polyphonicID)
                             #self.midiOutput.note_off(note, None, current_uniqueTrackID)   
                             #note_player.turnOffNote(note, None, current_trackID)  
                             #self.midiOutput.note_off(channel=current_trackID, note = note, velocity = volume)   
-                            midi_sheduler.note_off(current_trackID,
-                                                  tick, 
-                                                  note, volume)              
+                            for note in noteList:
+                                midi_sheduler.note_off(current_trackID,
+                                                      tick, 
+                                                      note, volume=0)   
+                               
+                            enabledNotes[polyphonicID] = None        
                     
                     # Delay events, the subroutine will be paused for a specific
                     # amount of ticks
@@ -173,21 +187,32 @@ class BMS2MIDI(BMS):
                         #self.midiOutput.continuous_controller(channel = current_trackID,
                         #                                      controller = 0x07,
                         #                                      value = volume)
+                        if self.estimatedVersion > 1:
+                            volume = scaleDown_number(volume, 16, 14)
+
+                            msb_volume = (volume >>7) & 127
+                            lsb_volume = volume & 127
+                            
+                            midi_sheduler.controller_event(current_trackID,
+                                                           tick, 
+                                                           7, msb_volume)
+                            
+                            midi_sheduler.controller_event(current_trackID,
+                                                           tick, 
+                                                           39, lsb_volume)
+                        else:
+                            volume = scaleDown_number(volume, 8, 7)
+                            midi_sheduler.controller_event(current_trackID,
+                                                           tick, 
+                                                           7, volume)
                         
-                        fixed_volume = scaleDown_number(pitch, 16, 14)
-                        
-                        midi_sheduler.controller_event(current_trackID,
-                                                       tick, 
-                                                       0x39, fixed_volume, twoBytes = True)
-                    
                     elif command == 0x9E:
                         unknown1, pitch, unknown2 = args
                         
                         # The BMS pitch value is 16 bits, but the MIDI pitch value
                         # is only 14 bits, so we need to scale down the 16 bits to
                         # 14 bits. This results in some loss of quality.
-                        pitch_factor = pitch / (2.0**16-1)
-                        fixed_pitch = int((2**14-1) * pitch_factor)
+                        fixed_pitch = scaleDown_number(pitch, 16, 14)
                         print "Fixed pitch from {0} to {1}".format(pitch, fixed_pitch)
                         #self.midiOutput.set_pitch(fixed_pitch, current_trackID)
                         #self.midiOutput.pitch_bend(channel = current_trackID,
@@ -195,7 +220,7 @@ class BMS2MIDI(BMS):
                         
                         midi_sheduler.pitch_change(current_trackID,
                                                    tick, 
-                                                   pitch)
+                                                   fixed_pitch)
                     
                     # Instrument Bank select or Program change
                     elif command == 0xA4:
@@ -206,9 +231,9 @@ class BMS2MIDI(BMS):
                             instrumentBank = args[1]
                             print "Changing instrument bank to",instrumentBank
                             
-                            #midi_sheduler.controller_event(current_trackID,
-                            #                               tick, 
-                            #                               0x00, instrumentBank)
+                            midi_sheduler.controller_event(current_trackID,
+                                                           tick, 
+                                                           0x00, instrumentBank)
                         elif modus == 33:
                             # Program change
                             program = args[1]
@@ -224,6 +249,7 @@ class BMS2MIDI(BMS):
                     elif command == 0xC4:
                         goto_offset = args[0]
                         print "Offset", goto_offset
+                        if self.noJumping: continue
                         
                         subroutine.setPreviousOffset()
                         subroutine.goToOffset(goto_offset)
@@ -234,22 +260,32 @@ class BMS2MIDI(BMS):
                     # On a 0xC6 event, we have to return to the position previously stored
                     # by a 0xC4 event. 
                     elif command == 0xC6:
-                        subroutine.goToPreviousOffset()
+                        if not self.noJumping:
+                            subroutine.goToPreviousOffset()
                     
                     # A simple event for jumping to a specific position in the file.
                     elif command == 0xC8:
                         mode, offset = args
+                        if self.noJumping: continue
                         
-                        
-                        
-                        subroutine.goToOffset(offset)
+                        if mode == 0:
+                            subroutine.goToOffset(offset)
+                        #elif mode == 1:
+                        #    # Probably "relative offset"
+                        #    new_offset = subroutine.read.hdlr.tell() + offset
+                        #    subroutine.goToOffset(new_offset)
+                        else:
+                            # Unknown modes
+                            pass
                         
                     
                     elif command == 0xC1:
                         trackID, offset = args
                         print trackID, offset
-                        midi_sheduler.addTrack(trackID, tick)
-                        subroutines_to_be_added.append((trackID, offset))
+                        
+                        if self.singleTrackMode == False:
+                            midi_sheduler.addTrack(trackID, tick)
+                            subroutines_to_be_added.append((trackID, offset))
                     
                     elif command == 0xFD:
                         bpmValue = args[0]
@@ -262,10 +298,20 @@ class BMS2MIDI(BMS):
                         midi_sheduler.change_PPQN(trackID, tick, ppqnValue)
                     
                     elif command == 0xFF:
-                        self.stoppedTracks[current_uniqueTrackID] = True
-                        print "Reached end of track", current_uniqueTrackID
-                        #raise RuntimeError("End of Track")
-                        return True
+                        if self.singleTrackMode == False:
+                            self.stoppedTracks[current_uniqueTrackID] = True
+                            print "Reached end of track", current_uniqueTrackID
+                            #raise RuntimeError("End of Track")
+                            return True
+                        
+                            if self.onlyEndWhenAllTracksEnd:
+                                if len(self.stoppedTracks) == len(self.BMS_tracks):
+                                    return True
+                            elif self.onlyMainTrackEndsMusic:
+                                if current_trackID == None:
+                                    #pass
+                                    return True
+                                
                 except struct_error:
                     print "Error in subroutine {0} at offset {1}".format(subroutine.uniqueTrackID,
                                                                          subroutine.read.hdlr.tell())
@@ -309,15 +355,18 @@ if __name__ == "__main__":
     #waitTime = int(MPQN/PPQN)
     #waitTime = int(MPQN)*10000
     
-    PARSER = Pikmin2_parser
+    #PARSER = Pikmin2_parser
     #PARSER = WindWaker_parser
+    #PARSER = SMarioSunshine_parser
+    PARSER = Pikmin1_parser
     
     bpm_values = []
     ppqn_values = []
     instruments = []
     
     # Change this variable if you want to play a different file.
-    PATH = "pikmin2_bms/worldmap.bms"
+    #PATH = "pikmin2_bms/worldmap.bms"
+    PATH = "mario_bms/pikmin_bms/demobgm.jam.bms"
     # Change this path if you want to save the results to a different file
     MIDI_PATH = "test2.midi"
     
@@ -335,7 +384,10 @@ if __name__ == "__main__":
         # between each "tick" (On a single "tick", one command 
         # from each subroutine is being read).
         
-        myBMS = BMS2MIDI(f, None, BPM = 90, PPQN = 100, parser = PARSER)
+        #myBMS = BMS2MIDI(f, None, BPM = 90, PPQN = 100, parser = PARSER)
+        myBMS = BMS2MIDI(f, None, BPM = 96, PPQN = 100, parser = PARSER, strict = True,
+                   singleTrackMode = False, noJumping = False, forceStartAt = 18411,#25283,
+                   onlyMainTrackEndsMusic = True, onlyEndWhenAllTracksEnd = True)
         
         try:
             myBMS.bmsEngine_run()
@@ -404,9 +456,9 @@ if __name__ == "__main__":
                 myMidi.note_off(ticks_passed, channel = trackID, note = note, velocity = volume)
 
             elif command == "controller":
-                controller, value = args
+                controller, value, useTwoBytes = args
                 myMidi.program_event(ticks_passed, channel = trackID, 
-                                     program = controller, value = value)
+                                     program = controller, value = value, twoBytes = useTwoBytes)
 
             elif command == "program":
                 program_instrument = args[0]
