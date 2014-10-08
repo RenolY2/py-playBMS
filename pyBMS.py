@@ -11,7 +11,8 @@ import pygame
 
 #from midiutil.MidiFile import MIDIFile
 #from midi.MidiOutFile import MidiOutFile
-from EventParsers import Pikmin2_parser, WindWaker_parser
+from EventParsers import (Pikmin2_parser, WindWaker_parser, 
+                          SMarioSunshine_parser, Pikmin1_parser)
 
 from BMSparser import BMS_Track, EndOfTrack
 from DataReader import DataReader
@@ -31,9 +32,15 @@ class notePlay(object):
         self.turnOffNotes = []
         
     def addNote(self, note, volume, channel):
+        if channel == None:
+            return
+        
         self.playNotes.append((note, volume, channel))
     
     def turnOffNote(self, note, volume, channel):
+        if channel == None:
+            return
+        
         self.turnOffNotes.append((note, volume, channel))
     
     def executeActions(self):
@@ -107,7 +114,7 @@ class Subroutine(object):
     def handle_command(self, commandID, args):
         pass"""
     def parse_next_command(self, strict = True):
-        return self.__parser__(self.read, self.bmsHandle)
+        return self.__parser__(self.read, self.bmsHandle, strict)
         
     def parse_iter(self):
         yield self.parse_next_command()
@@ -168,7 +175,9 @@ class BMS(object):
     # BPM is beats per minute, PPQN is pulses per quarter note,
     # as according to MIDI specs.
     def __init__(self, fileobj, midiOutput, BPM = 120, PPQN = 96,
-                 parser = Pikmin2_parser):
+                 parser = Pikmin2_parser, strict = True, forceStartAt = 0,
+                 singleTrackMode = False, noJumping = False, onlyMainTrackEndsMusic = False,
+                 onlyEndWhenAllTracksEnd = False):
         self.bmsFile = fileobj
         
         # We will read the entire file into memory
@@ -184,28 +193,65 @@ class BMS(object):
         
         self.enabledNotes = {}
         
-        # Microseconds per minute
-        MSPM = 60000000.0
-        # Microseconds per quarter note
-        MPQN = MSPM / BPM
-        
-        self.tempo = BPM
-        self.waitTime = (MPQN/1000000)/PPQN
+        self.calculate_tempo(BPM, PPQN)
         
         self.__eventParser__ = parser.parse_next_command#getattr(EventParsers, "Pikmin2"+"_parser").parse_next_command
+        self.estimatedVersion = parser.estimatedVersion
+        self.parserName = parser.name
         
         # The main subroutine does not have a specified
         # track ID in the BMS file, so we initiate the
         # subroutine with None as it's track ID.
-        self.addSubroutine(trackID = None, offset = 0)
+        #
+        # But when running in single track mode, we should set
+        # the ID to 0 to have notes playing normally.
+        if not singleTrackMode :
+            self.addSubroutine(trackID = None, offset = forceStartAt)
+        else:
+            self.addSubroutine(trackID = 0, offset = forceStartAt)
         
         self.stoppedTracks = {}
         
+        
+        # Flags for attempting to play BMS files that are formated in a more complicated way.
+        
+        # More tolerance to mistakes, e.g. when a note has an invalid polyphonic ID 
+        self.strict = strict
+        
+        # Disables adding new tracks, disables stopping at 0xFF events,
+        # makes the main track run through the entire file to play all notes
+        # that are located in other subroutines.
+        self.singleTrackMode = singleTrackMode
+        
+        # Disables Goto and Loop events so that the main track won't become
+        # stuck in a specific place.
+        self.noJumping = noJumping
+        
+        # In case the track seems to end too early, this variable can be
+        # set to true so that only the main track can end the song.
+        # This can be useful for some "malformed" BMS tracks which end too early.
+        self.onlyMainTrackEndsMusic = onlyMainTrackEndsMusic
+        
+        
+        # Sometimes it can happen that the main track ends before all others end.
+        # Set this to True to prevent the file from ending too soon.
+        self.onlyEndWhenAllTracksEnd = onlyEndWhenAllTracksEnd
         #self.collectTrackInfo()
     
     #def setParser(self, parser):
     #    self.__eventParser__ = parser.parse_next_command
     
+    def calculate_tempo(self, BPM, PPQN):
+        # Microseconds per minute
+        MSPM = 60000000.0
+        
+        # Microseconds per quarter note
+        MPQN = MSPM / BPM
+        
+        self.waitTime = (MPQN/1000000)/PPQN
+        self.BPM = BPM
+        self.PPQN = PPQN
+        
     def addSubroutine(self, trackID, offset):
         print "Added track",trackID
         # Create a buffer instance so that we can avoid
@@ -239,6 +285,7 @@ class BMS(object):
         while not trackStopped:
             subroutines_to_be_added = []
             
+            
             for subroutine in self.BMS_tracks:
                 current_trackID = subroutine.trackID
                 current_uniqueTrackID = subroutine.uniqueTrackID
@@ -258,7 +305,7 @@ class BMS(object):
                         continue
                     else:
                         curr = subroutine.read.hdlr.tell()
-                        command, args = subroutine.parse_next_command()
+                        command, args = subroutine.parse_next_command(strict = self.strict)
                         
                         print hex(command), hex(curr)
                     
@@ -268,20 +315,32 @@ class BMS(object):
                     if command <= 0x7F:
                         note, polyphonicID, volume = args
                         
+                        if polyphonicID > 0x7 and self.strict:
+                            raise RuntimeError("Invalid Polyphonic ID 0x{x:0} at offset 0x{x:1}"
+                                               "".format(polyphonicID, curr))
+                        elif polyphonicID > 0x7:
+                            # Well, we will skip this invalid note and hope that
+                            # everything will go well.
+                            continue
                         
                         if enabledNotes[polyphonicID] == None:
-                            enabledNotes[polyphonicID] = note
-                            #self.midiOutput.note_on(note, volume, current_uniqueTrackID)
-                            note_player.addNote(note, volume, current_trackID)
+                            enabledNotes[polyphonicID] = [note]
+                        else:
+                            enabledNotes[polyphonicID].append(note)
+                        #self.midiOutput.note_on(note, volume, current_uniqueTrackID)
+                        note_player.addNote(note, volume, current_trackID)
+                        
                     # Note-off event
                     elif command >= 0x81 and command <= 0x87:
                         polyphonicID = args[0]
                         if enabledNotes[polyphonicID] != None:
-                            note = enabledNotes[polyphonicID]
-                            enabledNotes[polyphonicID] = None
+                            noteList = enabledNotes[polyphonicID]
                             #self.midiOutput.note_on(note, volume, polyphonicID)
                             #self.midiOutput.note_off(note, None, current_uniqueTrackID)   
-                            note_player.turnOffNote(note, None, current_trackID)                   
+                            for note in noteList:
+                                note_player.turnOffNote(note, None, current_trackID)
+                                
+                            enabledNotes[polyphonicID] = None
                     
                     # Delay events, the subroutine will be paused for a specific
                     # amount of ticks
@@ -315,13 +374,22 @@ class BMS(object):
                     elif command == 0x9C:
                         unknown1, volume = args
                         
-                        # Pygame does not support writing midi events with more than two bytes
-                        # of data. One byte is occupied by the event ID for the volume change,
-                        # leaving us only one byte to play with. Therefore we need to scale the 
-                        # volume value from 16 bits down to 7 bits.
-                        fixed_volume = scaleDown_number(volume, 16, 7)
+                        if self.estimatedVersion > 1:
                         
-                        self.midiOutput.set_volume(fixed_volume, current_trackID)
+                            # Pygame does not support writing midi events with more than two bytes
+                            # of data. One byte is occupied by the event ID for the volume change,
+                            # leaving us only one byte to play with. Therefore we need to scale the 
+                            # volume value from 16 bits down to 7 bits.
+                            fixed_volume = scaleDown_number(volume, 16, 7)
+                            
+                            self.midiOutput.set_volume(fixed_volume, current_trackID)
+                        else:
+                            # Super Mario Sunshine only has one byte for the volume, unlike Pikmin 2.
+                            # Therefore we need to set an exception here.
+                            fixed_volume = scaleDown_number(volume, 8, 7)
+                            
+                            self.midiOutput.set_volume(fixed_volume, current_trackID)
+                            
                     
                     elif command == 0x9E:
                         unknown1, pitch, unknown2 = args
@@ -333,7 +401,7 @@ class BMS(object):
                         #pitch_factor = pitch / (2.0**16-1)
                         #fixed_pitch = int((2**14-1) * pitch_factor)
                         #print "Fixed pitch from {0} to {1}".format(pitch, fixed_pitch)
-                        #self.midiOutput.set_pitch(fixed_pitch, current_trackID)
+                        self.midiOutput.set_pitch(fixed_pitch, current_trackID)
                     
                     # Instrument Bank select or Program change
                     elif command == 0xA4:
@@ -344,8 +412,7 @@ class BMS(object):
                             instrumentBank = args[1]
                             print "Changing instrument bank to",instrumentBank
                             
-                            #self.midiOutput.set_instrument_bank(instrumentBank, current_trackID)
-                            pass
+                            self.midiOutput.set_instrument_bank(instrumentBank, current_trackID)
                         elif modus == 33:
                             # Program change
                             program = args[1]
@@ -358,6 +425,7 @@ class BMS(object):
                     elif command == 0xC4:
                         goto_offset = args[0]
                         print "Offset", goto_offset
+                        if self.noJumping: continue
                         
                         subroutine.setPreviousOffset()
                         subroutine.goToOffset(goto_offset)
@@ -368,28 +436,60 @@ class BMS(object):
                     # On a 0xC6 event, we have to return to the position previously stored
                     # by a 0xC4 event. 
                     elif command == 0xC6:
-                        subroutine.goToPreviousOffset()
+                        if not self.noJumping:
+                            subroutine.goToPreviousOffset()
                     
                     # A simple event for jumping to a specific position in the file.
                     elif command == 0xC8:
                         mode, offset = args
+                        if self.noJumping: continue
                         
-                        
-                        
-                        subroutine.goToOffset(offset)
-                        
+                        if mode == 0:
+                            # Go to absolute offset
+                            subroutine.goToOffset(offset)
+                        #elif mode == 1:
+                        #    # Probably "relative offset"
+                        #    new_offset = subroutine.read.hdlr.tell() + offset
+                        #    subroutine.goToOffset(new_offset)
+                        else:
+                            # Unknown modes
+                            pass
                     
                     elif command == 0xC1:
                         trackID, offset = args
                         print trackID, offset
                         
-                        subroutines_to_be_added.append((trackID, offset))
+                        if self.singleTrackMode == False:
+                            subroutines_to_be_added.append((trackID, offset))
+                        
+                    elif command == 0xFD:
+                        bpmValue = args[0]
+                        
+                        self.calculate_tempo(bpmValue, self.PPQN)
+                    
+                    elif command == 0xFE:
+                        ppqnValue = args[0]
+                        print "HEY",ppqnValue
+                        self.calculate_tempo(self.BPM, ppqnValue)
                     
                     elif command == 0xFF:
-                        self.stoppedTracks[current_uniqueTrackID] = True
-                        print "Reached end of track", current_uniqueTrackID, "TrackID: ",current_trackID
-                        #raise RuntimeError("End of Track")
-                        return True
+                        if self.singleTrackMode == False:
+                            self.stoppedTracks[current_uniqueTrackID] = True
+                            print "Reached end of track", current_uniqueTrackID, "TrackID: ",current_trackID
+                            #raise RuntimeError("End of Track")
+                            
+                            if self.onlyEndWhenAllTracksEnd:
+                                if len(self.stoppedTracks) == len(self.BMS_tracks):
+                                    return True
+                            elif self.onlyMainTrackEndsMusic:
+                                if current_trackID == None:
+                                    #pass
+                                    return True
+                            else:
+                                return True
+                        else:
+                            pass
+                        
                 except struct_error:
                     print "Error in subroutine {0} at offset {1}".format(subroutine.uniqueTrackID,
                                                                          subroutine.read.hdlr.tell())
@@ -402,71 +502,6 @@ class BMS(object):
             note_player.executeActions()
             time.sleep(self.waitTime)
             tick += 1        
-                
-            
-            
-        
-    """def collectTrackInfo(self):
-        try:
-            self.BMSTrack.parseTrack(callbacks = {0xC1 : self.event_getTracks},
-                                     terminateTrack_callback = self.event_getTrackLength)
-        except EndOfTrack:
-            pass
-        
-        for track, trackData in self.BMS_tracks.iteritems():
-            offset = trackData["offset"]
-            try:
-                self.BMSTrack.parseTrack(trackNum = track,
-                                         trackOffset = offset,
-                                         callbacks = {0xC1 : self.event_getTracks},
-                                         terminateTrack_callback = self.event_getTrackLength)
-            except EndOfTrack:
-                pass
-            
-    def playBMS(self, trackNum):
-        offset = self.BMS_tracks[trackNum]["offset"]
-        
-        try:
-            self.BMSTrack.parseTrack(trackNum = trackNum,
-                                     trackOffset = offset,
-                                     noteOn_callback = self.event_playNote,
-                                     noteOff_callback = self.event_turnOffNote)
-        except EndOfTrack:
-            pass
-    
-    def event_playNote(self, bms_object, trackNum, trackOffset, 
-                       commandPos, endPosition, bmsfile, 
-                       note, polyphonicID, volume):
-        
-        pass
-    
-    def event_turnOffNote(self, bms_object, trackNum, trackOffset, 
-                          commandPos, endPosition, bmsfile, 
-                          polyphonicID):
-        
-        
-        pass
-    
-    def changeInstrument(self, bms_object, trackNum, trackOffset, 
-                          commandPos, endPosition, bmsfile, 
-                          polyphonicID):
-        pass
-        
-    
-    def event_getTracks(self, bms_object, trackNum, trackOffset, 
-                  commandPos, endPosition, bmsfile, 
-                  newTrackNum, newTrackOffset):
-        
-        self.BMS_tracks[newTrackNum] = {"offset" : newTrackOffset,
-                                        "length" : None}
-    
-    def event_getTrackLength(self, bms_object, trackNum, trackOffset, 
-                                  commandPos, endPos, bmsfile):
-        
-        trackLength = commandPos-trackOffset
-        
-        self.BMS_tracks[trackNum]["length"] = trackLength
-        #self.track_metadata.append((trackNum, trackOffset, trackLength))"""
 
 
 
@@ -476,11 +511,15 @@ if __name__ == "__main__":
     #midiOutput = MidiOutFile("test.midi")
     
     # Change this variable if you want to play a different file.
-    PATH = "pikmin2_bms/ff_keyget.bms"
+    #PATH = "pikmin2_bms/ff_keyget.bms"
     #PATH = "zelda_bms/pirate_5.bms"
+    #PATH = "mario_bms/bms/k_rico.com.bms"
+    PATH = "mario_bms/pikmin_bms/pikise.jam.bms"
+    #PATH = "mario_bms/pikmin_bms/play3.jam.bms"
     
-    PARSER = Pikmin2_parser
+    #PARSER = Pikmin2_parser
     #PARSER = WindWaker_parser
+    PARSER = Pikmin1_parser
     
     with open(PATH, "rb") as f:
         # At the moment, there is no code to detect how fast the music
@@ -492,9 +531,22 @@ if __name__ == "__main__":
         # As of now, the values have no other significance besides defining the wait time
         # between each "tick" (On a single "tick", one command 
         # from each subroutine is being read).
-        myBMS = BMS(f, midiOutput, BPM = 96, PPQN = 100, parser = PARSER)
+        myBMS = BMS(f, midiOutput, BPM = 96, PPQN = 100, parser = PARSER, strict = True,
+                    singleTrackMode = False, noJumping = False, forceStartAt = 18411,#25283,
+                    onlyMainTrackEndsMusic = True, onlyEndWhenAllTracksEnd = False)
         #myBMS.setParser(PARSER)
         myBMS.bmsEngine_run()
+    
+    # Track offsets for music pieces inside Pikmin 1's demobgm
+    # 180
+    # 3507
+    # 4246
+    # 14375
+    # 16450
+    # 18392
+    # 19053
+    # 25283
+    
     
     midiOutput.close()
     pygame.midi.quit()
