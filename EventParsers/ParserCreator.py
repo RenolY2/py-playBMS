@@ -15,6 +15,15 @@ class TriedToAddDeprecatedCommand(Exception):
     def __repr__(self):
         return str(self)
 
+class DuplicateCommand(Exception):
+    def __init__(self, cmdID, version):
+        self.cmd = hex(cmdID)
+        self.version = version 
+    
+    def __str__(self):
+        return ("Tried to add a command ID twice: {0} in version {1}"
+                "").format(self.cmd, self.version)
+
 class ParserContainer(object):
     def __init__(self):
         self.parsers = {}
@@ -81,10 +90,11 @@ class VersionSpecificParser(object):
     
     def set_parser_function(self, function, commandID):
         if commandID in self.deprecated:
-            if commandID in self.deprecated:
-                raise TriedToAddDeprecatedCommand(commandID, self.estimatedVersion)
-            
-            self.command_parsers[commandID] = function
+            raise TriedToAddDeprecatedCommand(commandID, self.estimatedVersion)
+        elif commandID in self.command_parsers:
+            raise DuplicateCommand(commandID, self.estimatedVersion)
+        
+        self.command_parsers[commandID] = function
     
     # Helper function to add a parser function to a range of command IDs.
     # Please note that the function will be applied to the command IDs from
@@ -95,6 +105,8 @@ class VersionSpecificParser(object):
         for commandID in xrange(start_commandID, end_commandID):
             if commandID in self.deprecated:
                 raise TriedToAddDeprecatedCommand(commandID, self.estimatedVersion)
+            elif commandID in self.command_parsers:
+                raise DuplicateCommand(commandID, self.estimatedVersion)
             
             self.command_parsers[commandID] = function
     
@@ -105,6 +117,8 @@ class VersionSpecificParser(object):
         for commandID in commandIDs:
             if commandID in self.deprecated:
                 raise TriedToAddDeprecatedCommand(commandID, self.estimatedVersion)
+            elif commandID in self.command_parsers:
+                raise DuplicateCommand(commandID, self.estimatedVersion)
             
             self.command_parsers[commandID] = function
     
@@ -119,6 +133,23 @@ class VersionSpecificParser(object):
                                     "but the current parser already defined "
                                     "that command!".format(cmd = hex(cmd)))
             self.deprecated[cmd] = True
+    
+    def parse_next_cmd(self, bmsfile, readObj, strict = False):
+        cmdID = readObj.byte()
+        
+        if cmdID not in self.command_parsers:
+            offset = int(bmsfile.tell() - 1)
+            
+            raise RuntimeError("Unknown Command ID: {cmdID} at offset {offset}"
+                               "".format(cmdID = cmdID, offset = hex(offset)))
+        else:
+            parser_func = self.command_parsers[cmdID]
+            args = parser_func(bmsfile, readObj, strict, cmdID)
+            
+            return args
+            
+            
+            
 
 def create_parser_function(struct_datastructure):
     structObj = struct.Struct(struct_datastructure)
