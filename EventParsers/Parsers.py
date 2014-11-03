@@ -101,7 +101,7 @@ Pik1_parser = VersionSpecificParser(0.5, "Pikmin 1")
 
 Pik1_parser.set_many_parser_functions(bin_struct(">H"), 
                                       0x94, 
-                                      0xA0, 0xA3, 0xA5, 
+                                      0xA0, 0xA3, 0xA5, 0xA7,  
                                       0xB3, 0xB4, 0xB8,
                                       0xC9,
                                       0xD0, 0xD1, 0xD5,
@@ -147,9 +147,15 @@ container.add_parser(Pik1_parser)
 # Super Mario Sunshine Parsing Stuff
 SMSunshine_parser = VersionSpecificParser(1, "Super Mario Sunshine")
 
+SMSunshine_parser.deprecate_parser_function(0xDE, 0xF4)
+
 # Volume Change: Unknown, volume (volume is only 1 byte instead of two bytes)
 SMSunshine_parser.set_parser_function( bin_struct(">BB"), 
-                                0x9C)
+                                       0x9C)
+SMSunshine_parser.set_parser_function( bin_struct(">I"), 
+                                       0xA9)
+SMSunshine_parser.set_parser_function( bin_struct(">BBB"),
+                                       0xEF)
 
 container.add_parser(SMSunshine_parser)
 
@@ -161,7 +167,7 @@ Zelda_WW_parser = VersionSpecificParser(1.5, "Zelda: WW")
 # or maybe development of the audio engine for SMS was independent of the
 # development of the audio engine for Pikmin 1, which was released earlier.
 Zelda_WW_parser.set_parser_function( bin_struct(">BH"), 
-                                0x9C)
+                                     0x9C)
 
 container.add_parser(Zelda_WW_parser)
 
