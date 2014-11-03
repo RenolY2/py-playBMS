@@ -88,7 +88,6 @@ def parse_next_command(read, bmsfile, strict = True):
             elif controlEventID == 0x9C: # Volume Change
                 unknown1 = read.byte()
                 volume = read.byte()
-                unknown2 = read.byte()
                 
                 args = (unknown1, volume)
             
