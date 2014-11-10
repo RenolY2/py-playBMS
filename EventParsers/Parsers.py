@@ -52,8 +52,8 @@ baseParser.set_parser_function( bin_struct(">BBBB"),
 baseParser.set_parser_function( bin_struct(">I"), 
                                 0xC4)
 
-# Go back to last stored position, no arguments
-baseParser.set_parser_function( bin_struct(""), 
+# Go back to last stored position, one byte
+baseParser.set_parser_function( bin_struct("B"), 
                                 0xC6)
 
 # Loop to offset: Mode, Offset (Three bytes!)
@@ -140,22 +140,23 @@ Pik1_parser.set_parser_function(bin_struct(">BH"),
                                 0xE0)
 Pik1_parser.set_parser_function(bin_struct(">BBB"), 
                                 0xEB)
-
+Pik1_parser.set_parser_function( bin_struct(">BBB"),
+                                 0xEF)
 
 container.add_parser(Pik1_parser)
 
 # Super Mario Sunshine Parsing Stuff
 SMSunshine_parser = VersionSpecificParser(1, "Super Mario Sunshine")
 
-SMSunshine_parser.deprecate_parser_function(0xDE, 0xF4)
-
-# Volume Change: Unknown, volume (volume is only 1 byte instead of two bytes)
-SMSunshine_parser.set_parser_function( bin_struct(">BB"), 
-                                       0x9C)
+SMSunshine_parser.deprecate_parser_function(0xDE, 0xF4, 0xFA)
+    
+    
+# Volume Change: Unknown, volume (volume is only 1 byte instead of two bytes
+#SMSunshine_parser.set_parser_function( volume_parse, 
+#                                       0x9C)
 SMSunshine_parser.set_parser_function( bin_struct(">I"), 
                                        0xA9)
-SMSunshine_parser.set_parser_function( bin_struct(">BBB"),
-                                       0xEF)
+
 
 container.add_parser(SMSunshine_parser)
 
@@ -166,17 +167,31 @@ Zelda_WW_parser = VersionSpecificParser(1.5, "Zelda: WW")
 # Maybe Nintendo thought that Mario did not need such a precision for SMS,
 # or maybe development of the audio engine for SMS was independent of the
 # development of the audio engine for Pikmin 1, which was released earlier.
-Zelda_WW_parser.set_parser_function( bin_struct(">BH"), 
-                                     0x9C)
+#Zelda_WW_parser.set_parser_function( bin_struct(">BH"), 
+#                                     0x9C)
+
+Zelda_WW_parser.set_parser_function( bin_struct(">B"),
+                                     0xF4)
+
+# Unknown event, the last two bytes are often 0xFFFF
+Zelda_WW_parser.set_parser_function( bin_struct(">BH"),
+                                     0xAD)
+
+Zelda_WW_parser.set_parser_function( bin_struct(">BB"),
+                                     0xA1)
+Zelda_WW_parser.set_parser_function( bin_struct(">BB"),
+                                     0xA6)
 
 container.add_parser(Zelda_WW_parser)
 
 # Pikmin 2 Parsing Stuff
 Pik2_parser = VersionSpecificParser(2, "Pikmin 2")
 
-# Volume Change: Unknown, Volume (2 bytes instead of 1 byte previously)
-Pik2_parser.set_parser_function(bin_struct(">BH"),
-                                0x9C)
+Pik2_parser.deprecate_parser_function(0xA2, 0xD2, 0xF4)
+
+# Unknown
+Pik2_parser.set_parser_function(bin_struct(">H"),
+                                0xA0)
 
 container.add_parser(Pik2_parser)
 
