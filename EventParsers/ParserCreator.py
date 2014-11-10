@@ -141,12 +141,12 @@ class VersionSpecificParser(object):
             offset = int(bmsfile.tell() - 1)
             
             raise RuntimeError("Unknown Command ID: {cmdID} at offset {offset}"
-                               "".format(cmdID = cmdID, offset = hex(offset)))
+                               "".format(cmdID = hex(cmdID), offset = hex(offset)))
         else:
             parser_func = self.command_parsers[cmdID]
             args = parser_func(bmsfile, readObj, strict, cmdID)
             
-            return args
+            return cmdID, args
             
             
             
