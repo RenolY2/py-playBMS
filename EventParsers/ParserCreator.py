@@ -53,13 +53,15 @@ class ParserContainer(object):
         for version in self.versions:
             if version > estimatedVersion: break
             
-            parent_parser = self.parsers[version]
+            child_parser = self.parsers[version]
             
             # We apply all changes of the previous parsers to the current parser,
             # otherwise the parser will not be complete.
-            baseParser.__takeover_parent_parsers__(parent_parser)
+            baseParser.__takeover_child_parser__(child_parser)
         
         return baseParser
+    
+    
     
     
 
@@ -75,15 +77,24 @@ class VersionSpecificParser(object):
     # similarities between versions of the format.
     # To avoid writing lots of duplicate code, we will copy the parser
     # functions from the parent parser (i.e. a parser with a lower estimated version)
-    def __takeover_parent_parsers__(self, parentParser):
-        parentVersion = parentParser.estimatedVersion
-        gameName = parentParser.gameName
+    def __takeover_child_parser__(self, childParser):
+        childVersion = childParser.estimatedVersion
+        gameName = childParser.gameName
         
-        self.parents.append((parentVersion, gameName))
+        self.parents.append((childParser, gameName))
         
-        for commandID, function in parentParser.command_parsers.iteritems():
-            if commandID not in self.deprecated:
+        for commandID, function in childParser.command_parsers.iteritems():
+            if commandID not in childParser.deprecated:
                 self.command_parsers[commandID] = function
+            elif commandID in self.command_parsers:
+                
+                del self.command_parsers[commandID]
+        
+        self.deprecated = childParser.deprecated
+        
+        print childParser.gameName, childParser.estimatedVersion
+        print self.deprecated
+        print childParser.deprecated
         
         
         
