@@ -100,27 +100,20 @@ Pik1_parser = VersionSpecificParser(0.5, "Pikmin 1")
 
 
 Pik1_parser.set_many_parser_functions(bin_struct(">H"), 
-                                      0x94, 
-                                      0xA0, 0xA3, 0xA5, 0xA7,  
-                                      0xB3, 0xB4, 0xB8,
-                                      0xC9,
-                                      0xD0, 0xD1, 0xD5,
-                                      0xE6, 0xE7, 0xFA)
+                                      0xC9, 0xD0,
+                                      0xE7)
 
 Pik1_parser.set_many_parser_functions(bin_struct(">BB"),
-                                      0x98, 0xCB, 0xCC, 0xD2)
+                                      0x98, 0xCB, 0xD2)
 
 Pik1_parser.set_many_parser_functions(bin_struct(">B"),
-                                      0xC2, 0xCD, 0xCF, 
-                                      0xDA, 0xDB, 0xDE,
+                                      0xCD, 0xDE,
                                       0xF1)
 
-Pik1_parser.set_many_parser_functions(bin_struct(""),
-                                      0xA2, 0xA6, 0xA9,
-                                      0xB0, 0xBE,
-                                      0xC5, 0xCA, 
-                                      0xE1, 0xE3, 
-                                      0xF4)
+Pik1_parser.set_many_parser_functions(  bin_struct(""), #for deletion: 0xA2, 0xB0, 0xC5, 0xCA, 0xA6?
+                                        0xE3)
+#                                      0xA9, 0xBE, 
+#                                      0xE1, 0xE3, 0xF4)
                                       
 Pik1_parser.set_parser_function(bin_struct(">HB"), 
                                 0x92)
@@ -130,16 +123,10 @@ Pik1_parser.set_parser_function(bin_struct(">BBB"),
                                 0xAC)
 Pik1_parser.set_parser_function(bin_struct(">BBB"), 
                                 0xAF)
-Pik1_parser.set_parser_function(bin_struct(">I"), 
-                                0xC7)
 Pik1_parser.set_parser_function(bin_struct(">BH"), 
                                 0xDD)
 Pik1_parser.set_parser_function(bin_struct(">I"), 
                                 0xDF)
-Pik1_parser.set_parser_function(bin_struct(">BH"), 
-                                0xE0)
-Pik1_parser.set_parser_function(bin_struct(">BBB"), 
-                                0xEB)
 Pik1_parser.set_parser_function( bin_struct(">BBB"),
                                  0xEF)
 
@@ -149,13 +136,13 @@ container.add_parser(Pik1_parser)
 SMSunshine_parser = VersionSpecificParser(1, "Super Mario Sunshine")
 
 SMSunshine_parser.deprecate_parser_function(0xDE, 0xF4, 0xFA)
+SMSunshine_parser.deprecate_parser_function(0x92, 0xAA, 0xAF, 0xC9, 0xCB, 0xCD, 
+                                            0xD0, 0xD2, 0xDE, 0xDF, 0xE3, 0xF1)
     
     
 # Volume Change: Unknown, volume (volume is only 1 byte instead of two bytes
 #SMSunshine_parser.set_parser_function( volume_parse, 
 #                                       0x9C)
-SMSunshine_parser.set_parser_function( bin_struct(">I"), 
-                                       0xA9)
 
 
 container.add_parser(SMSunshine_parser)
@@ -182,12 +169,26 @@ Zelda_WW_parser.set_parser_function( bin_struct(">BB"),
 Zelda_WW_parser.set_parser_function( bin_struct(">BB"),
                                      0xA6)
 
+Zelda_WW_parser.set_parser_function( bin_struct("BB"), 
+                                     0xE6)
+Zelda_WW_parser.set_parser_function( bin_struct("BB"), 
+                                     0xCC)
+
+Zelda_WW_parser.deprecate_parser_function(0x92, 0xAA, 0xAF, 0xC9, 0xCD, 
+                                          0xD0, 0xDE, 0xDF, 0xE3)
+ 
+
 container.add_parser(Zelda_WW_parser)
 
 # Pikmin 2 Parsing Stuff
 Pik2_parser = VersionSpecificParser(2, "Pikmin 2")
 
-Pik2_parser.deprecate_parser_function(0xA2, 0xD2, 0xF4)
+Pik2_parser.deprecate_parser_function(0xD2, 0xF4)
+Pik2_parser.set_parser_function(bin_struct("B"),
+                                0xCF)
+
+Pik2_parser.set_parser_function(bin_struct("BB"),
+                                0xA3)
 
 # Unknown
 Pik2_parser.set_parser_function(bin_struct(">H"),
