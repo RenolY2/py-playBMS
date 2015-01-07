@@ -5,7 +5,8 @@ class Subroutine(object):
     def __init__(self, 
                  bmsHandle, readObj,
                  trackID, uniqueTrackID,
-                 offset, eventParser):
+                 offset, eventParser,
+                 customSubroutineHandler = None):
         
         self.bmsHandle = bmsHandle
         self.read = readObj
@@ -34,7 +35,11 @@ class Subroutine(object):
         self.PPQN = 100
         
         self._enabled_PolyphIDs = {}
-    
+
+        if customSubroutineHandler != None:
+            self.subroutineEventHandler = customSubroutineHandler(self)
+        else:
+            self.subroutineEventHandler = SubroutineEvents(self)
     
     # Keeping track of enabled polyphonic IDs and their notes
     def set_polyphID(self, ID, note):
@@ -51,16 +56,6 @@ class Subroutine(object):
     
     def turnOff_polyphID(self, ID):
         del self._enabled_PolyphIDs[ID]
-        
-        
-        
-        
-    def parse_next_command(self, strict = True):
-        return self.__parser__(self.read, self.bmsHandle, strict)
-        
-    def parse_iter(self):
-        yield self.parse_next_command()
-    
     
     def setPause(self, pauseLength):
         self.delay_countdown = pauseLength
@@ -104,3 +99,45 @@ class Subroutine(object):
     # to make the subroutine go to a specific offset.
     def goToOffset(self, offset):
         self.read.hdlr.seek(offset)
+
+    def _parse_next_command(self, strict = True):
+        return self.__parser__(self.read, self.bmsHandle, strict)
+
+    def handle_next_command(self, strict = True):
+        self.subroutineEventHandler.handleNextCommand()
+
+
+
+class SubroutineEvents(object):
+    def __init__(self, subroutine):
+        self.subroutine = subroutine
+
+        self.BMSevents = Events()
+
+    def handleNextCommand(self, midiSheduler, ignoreUnknownCMDs = False):
+        cmdData = self.subroutine._parse_next_command
+
+        cmdID, args = cmdData
+
+        if cmdID in self.BMSevents._events_:
+            pass
+        elif not ignoreUnknownCMDs:
+            raise RuntimeError("Cannot handle Command ID {0} with args {1}"
+                               "".format(cmdID, args))
+
+    def addEventHandler(self, ID, func):
+        self.BMSevents.addEvent(ID, func)
+
+    def addEventHandlerRange(self, start, end, func):
+        for i in xrange(start, end):
+            self.BMSevents.addEvent(i, func)
+
+    def fillUndefinedEvents(self, start, end, func):
+        for i in xrange(start, end):
+            if i not in self.BMSevents._events_:
+                self.BMSevents.addEvent(i, func)
+
+
+    def event_handleNote(self, midiSheduler, cmdID, args):
+        note = cmdID
+        polyID, volume = args
