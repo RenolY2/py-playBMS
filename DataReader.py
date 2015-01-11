@@ -57,9 +57,12 @@ class DataReader():
         return bytes
     
     # an integer with 3 bytes
-    def tripplet_int(self):
+    def tripplet(self):
         data = chr(0x0) + self.hdlr.read(3)
         return struct.unpack(">I", data)[0]
+    
+    def tripplet_int(self):
+        return self.tripplet
 
 
         
