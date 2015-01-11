@@ -3,12 +3,12 @@ from Events import Events
 
 class Subroutine(object):
     def __init__(self, 
-                 bmsHandle, readObj,
+                 readObj,
                  trackID, uniqueTrackID,
                  offset, eventParser,
                  customSubroutineHandler = None):
         
-        self.bmsHandle = bmsHandle
+        self.bmsHandle = readObj.hdlr
         self.read = readObj
         
         self.trackID = trackID
@@ -103,21 +103,28 @@ class Subroutine(object):
     def _parse_next_command(self, strict = True):
         return self.__parser__(self.read, self.bmsHandle, strict)
 
-    def handle_next_command(self, strict = True):
-        self.subroutineEventHandler.handleNextCommand()
+    def handle_command(self, commandData):
+        pass
+
+    def handle_next_command(self, *args, **kwargs):
+        self.subroutineEventHandler.handleNextCommand(*args, **kwargs)
 
 
 
 class SubroutineEvents(object):
-    def __init__(self, subroutine):
-        self.subroutine = subroutine
+    def __init__(self):
+        self.subroutine = None
 
         self.BMSevents = Events()
 
-    def handleNextCommand(self, midiSheduler, ignoreUnknownCMDs = False):
-        cmdData = self.subroutine._parse_next_command
+        self._offset = 0
+
+    def handleNextCommand(self, midiSheduler, ignoreUnknownCMDs = False, strict = True):
+        cmdData = self.subroutine._parse_next_command(strict)
 
         cmdID, args = cmdData
+
+        self._offset = self.subroutine.bm
 
         if cmdID in self.BMSevents._events_:
             pass
@@ -138,6 +145,24 @@ class SubroutineEvents(object):
                 self.BMSevents.addEvent(i, func)
 
 
-    def event_handleNote(self, midiSheduler, cmdID, args):
+    def event_handleNote(self, midiSheduler, cmdID, args, strict):
         note = cmdID
         polyID, volume = args
+
+        if polyID > 0x7 and self.strict:
+            raise RuntimeError("Invalid Polyphonic ID 0x{x:0} at offset 0x{x:1}"
+                               "".format(polyID, curr))
+        elif polyID > 0x7:
+            # Well, we will skip this invalid note and hope that
+            # everything will go well.
+            return
+
+        self.subroutine.set_polyphID(cmdID, polyID)
+        midiSheduler.note_on(self.subroutine.current_trackID,
+                              tick,
+                              note, volume)
+
+
+    def event_handleUnknown(self, midiSheduler, cmdID, args, strict):
+        pass # We cannot do anything if we don't know what the piece of data does
+
