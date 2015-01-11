@@ -1,6 +1,7 @@
 from StringIO import StringIO
 
 from DataReader import DataReader
+from OptionsCollector import OptionsCollector
 
 from EventParsers import Parsers
 from EventParsers.ParserCreator import VersionSpecificParser
@@ -32,7 +33,7 @@ class BmsSubroutines(object):
         uniqueID = len(self.__subroutines__)
         
         
-        subroutine = Subroutine(self.__bmsfile__, readObj,
+        subroutine = Subroutine(readObj,
                                 trackID, uniqueID,
                                 offset, self.__parser__)
         
@@ -46,11 +47,14 @@ class BmsSubroutines(object):
 
 
 class BmsInterpreter(object):
-    def __init__(self, fileobj, parserName = "pikmin2", customParser = None, 
-                 baseBPM = 100, basePPQN = 100, *args, **kwargs):
-        
-        self._bmsfile = fileobj
+    def __init__(self, fileobj, parserName = "pikmin2", customParser = None,
+                 *args, **kwargs):
+
+        self.options = OptionsCollector(baseBPM = 100, basePPQN = 100)
         self._setOptions(args, kwargs)
+
+        self._bmsfile = fileobj
+
         
         if parserName not in PARSERS:
             raise RuntimeError(
@@ -69,7 +73,7 @@ class BmsInterpreter(object):
         self._subroutines = BmsSubroutines(self._bmsfile, self._parser)
     
     def _setOptions(self, *args, **kwargs):
-        pass
+        self.options.set_options(kwargs)
     
     def parseFile(self):
         pass
