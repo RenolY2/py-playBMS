@@ -3,6 +3,11 @@ from ParserCreator import (ParserContainer,
 
 from ParserCreator import create_parser_function as bin_struct
 
+
+from ParserHelper import    (parse_1Byte_1Tripplet,
+                            parse_noteOff,
+                            parse_VL_delay)
+
 container = ParserContainer()
 
 
@@ -17,8 +22,7 @@ baseParser.set_parser_function( bin_struct("B"),
                                 0x80)
 
 # Note-off event
-def parse_noteOff(bmsfile, read, strict, commandID):
-    return (commandID & 0b111, )
+
 baseParser.set_parser_function_range(   parse_noteOff, 
                                         0x81, 0x88)
 
@@ -40,12 +44,14 @@ baseParser.set_parser_function( bin_struct(">BHB"),
 
 # Bank Select/Program Select: Unknown, Value
 # If unknown == 32, value is instrument bank
-# If unknown == 33, value is program (i.e. an ID of an instrument
+# If unknown == 33, value is program (i.e. an ID of an instrument)
 baseParser.set_parser_function( bin_struct(">BB"), 
                                 0xA4)
 
+
+
 # Create new subroutine: Track ID, Track Offset (3 bytes!)
-baseParser.set_parser_function( bin_struct(">BBBB"), 
+baseParser.set_parser_function( parse_1Byte_1Tripplet, 
                                 0xC1)
 
 # Goto offset: Offset
@@ -57,24 +63,9 @@ baseParser.set_parser_function( bin_struct("B"),
                                 0xC6)
 
 # Loop to offset: Mode, Offset (Three bytes!)
-baseParser.set_parser_function( bin_struct(">BBBB"), 
+baseParser.set_parser_function( parse_1Byte_1Tripplet, 
                                 0xC8)
 
-# Variable-length delay
-def parse_VL_delay(bmsfile, read, strict, commandID):
-    start = bmsfile.tell()
-    
-    value = read.byte()
-    
-    while (value >> 7) == 1:
-        value = read.byte()
-        
-    dataLen = bmsfile.tell() - start
-    bmsfile.seek(start)
-    
-    data = read.byteArray(dataLen)
-    
-    return (data, )
 
 baseParser.set_parser_function( parse_VL_delay, 
                                 0xF0)
