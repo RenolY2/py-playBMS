@@ -7,6 +7,7 @@ class SubroutineTemplate(object):
                  readData,
                  trackID, uniqueTrackID, parentID,
                  offset, bmsParser,
+                 options,
                  customSubroutineHandler = None):
 
         # readData is an instance of DataReader, found in DataReader.py
@@ -40,6 +41,55 @@ class SubroutineTemplate(object):
         # initiated with.
         self.bmsParser = bmsParser
 
+        # We need to keep track of which notes we have
+        # assigned to which IDs so that we can turn off all notes
+        # with a specific polyhponic ID when we encounter a note off event.
+        self._enabled_PolyphIDs = {}
+
+        # Once started, a subroutine should be running until it
+        # encounters an end of track command.
+        self.stopped = False
+
+        self.options = options
+
+        self.pause_ticksLeft = 0
+
+
+        if customSubroutineHandler == None:
+            self.subrHandler = SubroutineEventsTemplate(self)
+        else:
+
+            self.subrHandler = customSubroutineHandler(self)
+
+
+    # Keeping track of enabled polyphonic IDs and their notes
+    def add_polyphNote(self, ID, note):
+        if ID not in self._enabled_PolyphIDs:
+            self._enabled_PolyphIDs[ID] = [note]
+        else:
+            self._enabled_PolyphIDs[ID].append(note)
+
+    def getNotes_byPolyphID(self, ID):
+        if ID not in self._enabled_PolyphIDs:
+            return []
+        else:
+            return self._enabled_PolyphIDs[ID]
+
+    def turnOff_polyphID(self, ID):
+        if ID in self._enabled_PolyphIDs:
+            del self._enabled_PolyphIDs[ID]
+
+    def setPause(self, length):
+        if length < 0: raise RuntimeError("Pause is not supposed to be negative!")
+        self.pause_ticksLeft += length
+
+    def handleNextCommand(self, sheduler, tick):
+        if self.pause_ticksLeft > 0:
+            self.pause_ticksLeft -= 1
+        else:
+            self.subrHandler.handleNextCommand(sheduler, tick, False, True)
+
+
 
 
 class SubroutineEventsTemplate(object):
@@ -47,6 +97,17 @@ class SubroutineEventsTemplate(object):
         self.subroutine = subroutine
 
         self.BMSevents = Events()
+
+
+        self._addEventHandlerRange(0x00, 0x80, self.event_handleNote_on)
+        self._addEventHandlerRange(0x81, 0x88, self.event_handleNote_off)
+
+        self._addEventHandler(0x80, self.event_handlePause)
+        self._addEventHandler(0x88, self.event_handlePause)
+
+        self._addEventHandler(0xFF, self.event_handleEndOfTrack)
+
+        self._fillUndefinedEvents(0x00, 0xFF+1, self.event_handleUnknown)
 
 
     def handleNextCommand(self, midiSheduler, tick, ignoreUnknownCMDs = False, strict = True):
@@ -93,21 +154,35 @@ class SubroutineEventsTemplate(object):
             # everything will go well.
             return
 
-        self.subroutine.set_polyphID(cmdID, polyID)
-        midiSheduler.note_on(self.subroutine.current_trackIDs,
+        self.subroutine.add_polyphNote(cmdID, polyID)
+        midiSheduler.note_on(self.subroutine.uuTrackID,
                              tick,
                              cmdID, volume)
 
 
     def event_handleNote_off(self, prevOffset, currOffset, tick,
                             midiSheduler, cmdID, args, strict):
-        pass # We cannot do anything if we don't know what that piece of data does
+        polyID = args[0]
+        for note in self.subroutine.getNotes_byPolyphID(polyID):
+            midiSheduler.note_off(  self.subroutine.uuTrackID,
+                                    tick,
+                                    note, volume=0)
+        self.subroutine.turnOff_polyphID(polyID)
 
 
     def event_handleUnknown(self, prevOffset, currOffset, tick,
                             midiSheduler, cmdID, args, strict):
         pass # We cannot do anything if we don't know what that piece of data does
 
+    def event_handleEndOfTrack(self, prevOffset, currOffset, tick,
+                               midiSheduler, cmdID, args, strict):
+        print "Track end at", currOffset, ",", tick, "Ticks"
+        self.stopped = True
 
-
+    def event_handlePause(self, prevOffset, currOffset, tick,
+                          midiSheduler, cmdID, args, strict):
+        delay = args[0]
+        #print "Track {0} is paused for {1} ticks".format(current_uniqueTrackID,
+        #                                                 delay)
+        self.subroutine.setPause(delay)
 
