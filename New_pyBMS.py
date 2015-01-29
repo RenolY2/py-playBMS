@@ -6,18 +6,21 @@ from OptionsCollector import OptionsCollector
 from EventParsers import Parsers
 from EventParsers.ParserCreator import VersionSpecificParser
 
+from bmsmodules.SubroutineTemplate import SubroutineTemplate as Subroutine
+
 PARSERS = {"pikmin1" : Parsers.Pik1_parser,
            "pikmin2" : Parsers.Pik2_parser,
            "zeldawindwaker" : Parsers.Zelda_WW_parser,
            "supermariosunshine" : Parsers.SMSunshine_parser} 
 
 class BmsSubroutines(object):
-    def __init__(self, bmsfile, parser):
+    def __init__(self, bmsfile, parser, options):
         self.__subroutines__ = []
         self.__bmsfile__ = bmsfile
         self.__parser__ = parser
+        self._options = options
     
-    def addSubroutine(self, trackID, offset):
+    def addSubroutine(self, parentID, trackID, offset):
         # Every subroutine parses the file independently. Therefore we
         # need to create a different file handle for each subroutine. To avoid
         # copying the data for every subroutine, we will create a "buffer" of the 
@@ -36,14 +39,17 @@ class BmsSubroutines(object):
         subroutine = Subroutine(readObj,
                                 trackID, uniqueID,
                                 offset, self.__parser__)
+        subroutine = Subroutine(readObj,
+                                trackID, uniqueID, parentID,
+                                offset, self.__parser__,
+                                self._options)
         
         self.__subroutines__.append(subroutine)
         
         
     def __iter__(self):
         for subroutine in self.__subroutines__:
-            if subroutine.checkIfPaused == False:
-                yield subroutine
+            yield subroutine
 
 
 class BmsInterpreter(object):
