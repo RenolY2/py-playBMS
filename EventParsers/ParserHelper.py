@@ -4,7 +4,7 @@
 # represening the polyphonic ID, so that all notes with that particular
 # polyphonic ID can be turned off.
 def parse_noteOff(bmsfile, read, strict, commandID):
-    return commandID & 0b111
+    return (commandID & 0b111,)
 
 # Several commands use three bytes of data and one byte for
 # something else. Because Python's struct module does not have
