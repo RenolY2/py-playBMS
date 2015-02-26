@@ -22,7 +22,6 @@ baseParser.set_parser_function( bin_struct("B"),
                                 0x80)
 
 # Note-off event
-
 baseParser.set_parser_function_range(   parse_noteOff, 
                                         0x81, 0x88)
 
