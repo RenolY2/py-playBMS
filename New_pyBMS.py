@@ -1,11 +1,9 @@
 from StringIO import StringIO
 
-from DataReader import DataReader
 from OptionsCollector import OptionsCollector
-
 from EventParsers import Parsers
 from EventParsers.ParserCreator import VersionSpecificParser
-
+from bmsmodules import DataReader
 from bmsmodules.SubroutineTemplate import SubroutineTemplate as Subroutine
 from bmsmodules.MidiWriter.MidiSheduler import MIDI_sheduler
 
@@ -129,7 +127,8 @@ class BmsInterpreter(object):
 if __name__ == "__main__":
     import os
     import struct
-    bmsfile = os.path.join("pikmin2_bms","n_tutorial_1stday.bms")
+    #bmsfile = os.path.join("pikmin2_bms","n_tutorial_1stday.bms")
+    bmsfile = os.path.join("pikmin2_bms","new_00.bms")
 
     with open(bmsfile, "rb") as f:
         #bms_data = StringIO(f.read())
