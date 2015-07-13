@@ -1,10 +1,10 @@
-from ParserCreator import (ParserContainer, 
+from parser_creator import (ParserContainer,
                            VersionSpecificParser)
 
-from ParserCreator import create_parser_function as bin_struct
+from parser_creator import create_parser_function as bin_struct
 
 
-from ParserHelper import    (parse_1Byte_1Tripplet,
+from parser_helper import    (parse_1Byte_1Tripplet,
                             parse_noteOff,
                             parse_VL_delay)
 
