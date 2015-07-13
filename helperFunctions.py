@@ -1,20 +1,17 @@
 
-
-
-
-def readVariableLength_Quantity(string):
+def read_varlen_quantity(string):
     pass
 
 
-def scaleDown_number(number, fromBits, toBits):
-    assert number <= (2**fromBits-1)
-    assert isinstance(number, int)
+def scale_num(num, from_bits, to_bits):
+    assert num <= (2**from_bits-1)
+    assert isinstance(num, int)
     
-    scale_factor = number / (2.0**fromBits-1)
-    fixed_number = scale_factor * (2.0**toBits-1)
+    scale_factor = num / (2.0**from_bits-1)
+    fixed_number = scale_factor * (2.0**to_bits-1)
     
     return int(fixed_number)
 
 
-
-print scaleDown_number(2819, 16, 14)
+if __name__ == "__main__":
+    print scale_num(2819, 14, 16)
