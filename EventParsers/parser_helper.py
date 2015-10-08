@@ -39,6 +39,6 @@ def parse_0xB1(bmsfile, read, strict, commandID):
     if unknown_byte == 0x40:
         unknown_data = read.short()
     else:
-        unknown_data = read.tripplet()
+        unknown_data = read.int()
 
     return (C1_byte, unknown_byte, unknown_data)
