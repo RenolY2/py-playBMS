@@ -1,12 +1,12 @@
 from parser_creator import (ParserContainer,
-                           VersionSpecificParser)
+                            VersionSpecificParser)
 
 from parser_creator import create_parser_function as bin_struct
 
 
-from parser_helper import    (parse_1Byte_1Tripplet,
-                            parse_noteOff,
-                            parse_VL_delay)
+from parser_helper import (parse_1Byte_1Tripplet,
+                           parse_noteOff,
+                           parse_VL_delay, parse_0xB1)
 
 container = ParserContainer()
 
@@ -14,38 +14,38 @@ container = ParserContainer()
 baseParser = VersionSpecificParser(0, "BMS Base Events")
 
 # Note-on Event
-baseParser.set_parser_function_range(   bin_struct("bb"), 
-                                        0x00, 0x80)
+baseParser.set_parser_function_range(bin_struct("bb"),
+                                     0x00, 0x80)
 
 # Delay event for up to 255 ticks
-baseParser.set_parser_function( bin_struct("B"), 
-                                0x80)
+baseParser.set_parser_function(bin_struct("B"),
+                               0x80)
 
 # Note-off event
-baseParser.set_parser_function_range(   parse_noteOff, 
-                                        0x81, 0x88)
+baseParser.set_parser_function_range(parse_noteOff,
+                                     0x81, 0x88)
 
 # Delay event for up to 0xFFFF (65535) ticks
-baseParser.set_parser_function( bin_struct(">H"), 
-                                0x88)
+baseParser.set_parser_function(bin_struct(">H"),
+                               0x88)
 
 # Pan change: Unknown, Pan, Unknown
-baseParser.set_parser_function( bin_struct(">BBB"), 
-                                0x9A)
+baseParser.set_parser_function(bin_struct(">BBB"),
+                               0x9A)
 
 # Volume Change: Unknown, volume
-baseParser.set_parser_function( bin_struct(">BH"), 
-                                0x9C)
+baseParser.set_parser_function(bin_struct(">BH"),
+                               0x9C)
 
 # Pitch shift: Unknown, Pitch, Unknown
-baseParser.set_parser_function( bin_struct(">BHB"), 
-                                0x9E) 
+baseParser.set_parser_function(bin_struct(">BHB"),
+                               0x9E)
 
 # Bank Select/Program Select: Unknown, Value
 # If unknown == 32, value is instrument bank
 # If unknown == 33, value is program (i.e. an ID of an instrument)
-baseParser.set_parser_function( bin_struct(">BB"), 
-                                0xA4)
+baseParser.set_parser_function(bin_struct(">BB"),
+                               0xA4)
 
 
 
@@ -177,12 +177,31 @@ Pik2_parser.deprecate_parser_function(0xD2, 0xF4)
 Pik2_parser.set_parser_function(bin_struct("B"),
                                 0xCF)
 
+# Unknown
+
+
+
+Pik2_parser.set_parser_function(bin_struct(">H"),
+                                0xA0)
+
 Pik2_parser.set_parser_function(bin_struct("BB"),
                                 0xA3)
 
-# Unknown
-Pik2_parser.set_parser_function(bin_struct(">H"),
-                                0xA0)
+
+# Unknown IDs used only by specific bms files.
+Pik2_parser.set_parser_function(parse_0xB1,
+                                0xB1)
+
+Pik2_parser.set_parser_function(bin_struct("BB"),
+                                0xA7)
+
+Pik2_parser.set_parser_function(bin_struct("B"),
+                                0xDA)
+#Pik2_parser.set_parser_function(bin_struct("BI"),
+#                                0xB1)
+
+Pik2_parser.set_parser_function(bin_struct(""),
+                                0xE1)
 
 container.add_parser(Pik2_parser)
 

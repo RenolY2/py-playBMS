@@ -74,7 +74,7 @@ class VersionSpecificParser(object):
 
     def inherit_parsers(self, parent):
         child_version = parent.estimated_version
-        game_name = parent.gameName
+        game_name = parent.game_name
         
         self.parents.append((parent, game_name))
         

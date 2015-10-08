@@ -57,7 +57,6 @@ class SubroutineTemplate(object):
         if custom_subroutine_handler is None:
             self.subroutine_handler = SubroutineEventsTemplate(self)
         else:
-
             self.subroutine_handler = custom_subroutine_handler(self)
 
     # Keeping track of enabled polyphonic IDs and their notes
@@ -82,7 +81,6 @@ class SubroutineTemplate(object):
             raise RuntimeError("Pause is not supposed to be negative!")
         self.pause_ticks_left += length
 
-
     def handle_next_command(self, scheduler, tick):
         if self.pause_ticks_left > 0:
             self.pause_ticks_left -= 1
@@ -92,9 +90,8 @@ class SubroutineTemplate(object):
             cmd = self.subroutine_handler.handle_next_command(scheduler, tick, False, True)
             return cmd
 
-    def _parse_next_command(self, strict = True):
+    def parse_next_command(self, strict = True):
         return self.bms_parser.parse_next_cmd(self.filehandle, self.reader, strict)
-
 
 
 class SubroutineEventsTemplate(object):
@@ -115,12 +112,12 @@ class SubroutineEventsTemplate(object):
 
     def handle_next_command(self, midi_scheduler, tick, ignore_unknown_cmd=False, strict=True):
         prev_offset = self.subroutine.filehandle.tell()
-        cmd_data = self.subroutine._parse_next_command(strict)
+        cmd_data = self.subroutine.parse_next_command(strict)
         curr_offset = self.subroutine.filehandle.tell()
 
         cmd_id, args = cmd_data
         #print cmdData
-        if cmd_id in self.bms_events._events_:
+        if cmd_id in self.bms_events:
             # tick refers to the tick at which the main loop signaled the subroutine
             # to parse and handle the next command.
             # Every tick, all subroutines can either parse and handle one command, or sleep.
@@ -142,9 +139,8 @@ class SubroutineEventsTemplate(object):
 
     def _fill_undefined_events(self, start, end, func):
         for i in xrange(start, end):
-            if i not in self.bms_events._events_:
+            if i not in self.bms_events:
                 self.bms_events.add_event(i, func)
-
 
     def event_handle_note_on(self, prev_offset, curr_offset, tick,
                              midi_scheduler, cmd_id, args, strict):
@@ -152,7 +148,7 @@ class SubroutineEventsTemplate(object):
         poly_id, volume = args
 
         if poly_id > 0x7 and strict:
-            raise RuntimeError("Invalid Polyphonic ID 0x{x:0} at offset 0x{x:1}"
+            raise RuntimeError("Invalid Polyphonic ID 0x{0:x} at offset 0x{1:x}"
                                "".format(poly_id, prev_offset))
         elif poly_id > 0x7:
             # Well, we will skip this invalid note and hope that

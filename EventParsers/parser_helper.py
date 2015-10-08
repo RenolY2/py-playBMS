@@ -30,3 +30,15 @@ def parse_VL_delay(bmsfile, read, strict, commandID):
     data = read.byteArray(dataLen)
 
     return (data, )
+
+# Unknown piece data that can be 4 or 5 bytes in length, based on the second byte.
+def parse_0xB1(bmsfile, read, strict, commandID):
+    C1_byte = read.byte()
+    unknown_byte = read.byte()
+
+    if unknown_byte == 0x40:
+        unknown_data = read.short()
+    else:
+        unknown_data = read.tripplet()
+
+    return (C1_byte, unknown_byte, unknown_data)

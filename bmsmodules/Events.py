@@ -21,3 +21,6 @@ class Events(object):
             raise RuntimeError("No such Event name '{0}'".format(eventname))
         else:
             self._events[eventname](*args, **kwargs)
+
+    def __iter__(self):
+        return iter(self._events)

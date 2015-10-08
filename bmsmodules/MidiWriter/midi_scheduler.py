@@ -5,9 +5,7 @@ from midi import MIDI
 # To be able to put that data into a midi sequence, we need to 
 # keep track of which events we are playing at which point so
 # that we can create a linear midi sequence.
-class MIDIScheduler(object):
-
-
+class MidiScheduler(object):
     def __init__(self):
         self.tracks = {}
 
@@ -16,8 +14,6 @@ class MIDIScheduler(object):
 
     def add_action(self, track_id, tick, action):
         self.tracks[track_id]["actions"].append((tick, action))
-
-
 
     def note_on(self, track_id, tick, note, volume):
         self.add_action(track_id, tick, ("note_on", note, volume))
@@ -68,7 +64,7 @@ class MIDIScheduler(object):
 
             #myMidi.addTrackName(trackID, start, "Subroutine")
             #myMidi.addTempo(trackID, start, BPM)
-            midi_data.startTrack()
+            midi_data.start_track()
 
             # Change the instrument bank for each track in case the default
             # instrument bank sounds odd.
