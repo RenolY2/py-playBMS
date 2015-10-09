@@ -110,7 +110,7 @@ class BmsInterpreter(object):
             # TODO: Add new subroutines when they are encountered.
             self._advance_tick()
 
-        return self.scheduler.compile_midi(INSTRUMENT_BANK=0, BPM=100)
+        #return self.scheduler.compile_midi(INSTRUMENT_BANK=0, BPM=100)
 
     def _advance_tick(self):
         for sub in self._subroutines:
@@ -118,8 +118,8 @@ class BmsInterpreter(object):
             if cmd is None:
                 pass
             else:
-                print cmd
-
+                #print cmd
+                pass
         self._ticks += 1
 
 
@@ -128,25 +128,26 @@ if __name__ == "__main__":
     import struct
     #bmsfile = os.path.join("pikmin2_bms","n_tutorial_1stday.bms")
 
-    # =====
-    # Here goes the path to the bms file you want to convert.
-    # os.path.join joins several strings together into one path.
-    # ====
-    bmsfile = os.path.join("pikmin2_bms", "n_tutorial.bms")
 
-    with open(bmsfile, "rb") as f:
+
+    input_path = os.path.join("pikmin2_bms", "yakushima.bms")
+    output_path = "output.midi"
+    parser = "pikmin2"
+
+
+    with open(input_path, "rb") as f:
         #bms_data = StringIO(f.read())
 
-        BMSparse = BmsInterpreter(f.read(), parser_name="pikmin2")#bms_data)
+        bms_parser = BmsInterpreter(f.read(), parser_name=parser)#bms_data)
 
     try:
-        BMSparse.parse_file()
+        bms_parser.parse_file()
     except struct.error as e:
         print e
         print "reached end of file, most likely"
 
-    midi = BMSparse.scheduler.compile_midi(0, 128)
+    midi = bms_parser.scheduler.compile_midi(instrument_bank=0, bpm=100)
 
     # This is the output file to which the result is written.
-    with open("output.midi", "wb") as f:
+    with open(output_path, "wb") as f:
         midi.write_midi(f)
